@@ -1,13 +1,19 @@
 // control-base — the control stack's product-neutral base, as a project of its own.
 //
-// TWO MODULES AND NOTHING ELSE:
-//   plant      the Plant contract a controller programs against: ten queries, every one of them
-//              stated in control-math types. It is where it is because the contract's POINT is that
-//              the dynamics backend can be swapped without the control law changing, so the file
-//              cannot live beside an implementation.
-//   efference  the copy of what a layer COMMANDED against what its sensor read, and their
-//              difference — `measured = commanded + residual`, the split a contact detector wants.
-//              Dependency-free: it imports nothing at all.
+// THREE MODULES AND NOTHING ELSE:
+//   plant              the Plant contract a controller programs against: ten queries, every one of
+//                      them stated in control-math types. It is where it is because the contract's
+//                      POINT is that the dynamics backend can be swapped without the control law
+//                      changing, so the file cannot live beside an implementation.
+//   efference          the copy of what a layer COMMANDED against what its sensor read, and their
+//                      difference — `measured = commanded + residual`, the split a contact detector
+//                      wants. Dependency-free: it imports nothing at all.
+//   contact_injection  the soft-constraint contact model the plants share: low-pass the wrench, gate
+//                      the non-touching slots, clamp each slot, add the contact-point dashpot, and
+//                      push the sum through that point's J^T. Arithmetic on numbers a plant READ —
+//                      from an engine, or from a model of its own. It names no engine, and it is here
+//                      because more than one plant uses it: it states once what a copy gets wrong
+//                      quietly (the gate, the clamp-before-dashpot order, the dashpot's sign).
 //
 // THE CHARTER, which is what keeps this crate thin: zero-dependency value types, and the interfaces
 // that state a boundary. It names no engine, no model and no layer, and its dependency set is
@@ -19,5 +25,6 @@
 // inside one, every other would have to depend on it. So this crate is defined by what it is allowed
 // to name — its own types, and the arithmetic crate below it — and not by who consumes it.
 
+pub mod contact_injection;
 pub mod efference;
 pub mod plant;

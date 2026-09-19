@@ -1,20 +1,26 @@
 # control-base — the control stack's product-neutral base
 
 A project of its own, and not a module inside anything that uses it: the `Plant`
-contract and the efference copy belong to the boundary, not to a side of it.
-MIT-licensed (see `LICENSE`).
+contract, the efference copy and the contact model the plants share belong to the
+boundary, not to a side of it. MIT-licensed (see `LICENSE`).
 
-Two modules, no engine, no model, no layer:
+Three modules, no engine, no model, no layer:
 
 ```text
-plant      the Plant contract a controller programs against: ten queries, every
-           one stated in control-math types (joint_positions / joint_velocities /
-           mass_matrix / bias_torques / gravity_torques, compute_jacobian (3 x n)
-           and compute_full_jacobian (6 x n), body_pose, and the per-link frames
-           a whole-body avoidance layer reads)
-efference  the copy of what a layer COMMANDED against what its sensor read, and
-           their difference: measured = commanded + residual. Dependency-free —
-           it imports nothing at all.
+plant              the Plant contract a controller programs against: ten queries,
+                   every one stated in control-math types (joint_positions /
+                   joint_velocities / mass_matrix / bias_torques / gravity_torques,
+                   compute_jacobian (3 x n) and compute_full_jacobian (6 x n),
+                   body_pose, and the per-link frames a whole-body avoidance layer
+                   reads)
+efference          the copy of what a layer COMMANDED against what its sensor read,
+                   and their difference: measured = commanded + residual.
+                   Dependency-free — it imports nothing at all.
+contact_injection  the soft-constraint contact model the plants share: low-pass the
+                   wrench, gate the non-touching slots, clamp each slot, add the
+                   contact-point dashpot, push the sum through that point's J^T.
+                   Arithmetic on numbers a plant read; it names no engine, and more
+                   than one plant uses it, which is why it is stated here once.
 ```
 
 It depends on one crate, [`control-math`](../control-math), for the `Mat`, `Vec3`
@@ -43,7 +49,8 @@ dependency set is exactly `{ control-math }` and is not meant to grow.
 
 `tests/charter.rs` makes that checkable rather than promised:
 
-- every import is `control-math` or this crate's own;
+- every import is `control-math` or this crate's own, and the module list is exactly
+  the three above;
 - no source, in **code**, names an engine token or SDK prefix, a model-layer type, a
   concrete implementor of this crate's own contract, or a control law — the four
   lists in the test hold those words, and they are the only place this crate writes

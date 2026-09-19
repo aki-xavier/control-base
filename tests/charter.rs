@@ -50,10 +50,11 @@ fn code_of(text: &str) -> String {
 #[test]
 fn every_import_is_control_math_or_our_own() {
     let files = sources();
-    assert!(
-        files.len() >= 3,
-        "the source walk found {} files, which cannot be this crate",
-        files.len()
+    assert_eq!(
+        files.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        vec!["contact_injection.rs", "efference.rs", "lib.rs", "plant.rs"],
+        "the module list moved: the base is the contract, the efference copy and the contact model \
+         the plants share, and nothing else"
     );
     for (name, text) in &files {
         for line in code_of(text).lines() {
@@ -145,15 +146,24 @@ fn nothing_here_names_an_engine_a_model_or_a_law() {
             }
         }
     }
-    // and the lists are anchored: the contract really is stated here, so the checks above are not
-    // passing by looking at files that hold nothing
-    let plant = sources()
-        .into_iter()
+    // and the lists are anchored: the contract and the shared arithmetic really are stated here, so
+    // the checks above are not passing by looking at files that hold nothing
+    let src = sources();
+    let plant = src
+        .iter()
         .find(|(n, _)| n == "plant.rs")
         .expect("src/plant.rs is gone: the Plant contract is not stated in this crate");
     assert!(
         plant.1.contains("pub trait Plant") && plant.1.contains("fn compute_full_jacobian"),
         "src/plant.rs no longer states the Plant contract"
+    );
+    let ci = src
+        .iter()
+        .find(|(n, _)| n == "contact_injection.rs")
+        .expect("src/contact_injection.rs is gone: the shared contact model is not stated here");
+    assert!(
+        ci.1.contains("pub struct ContactInjection") && ci.1.contains("pub fn smooth_into"),
+        "src/contact_injection.rs no longer states the shared contact model"
     );
 }
 
