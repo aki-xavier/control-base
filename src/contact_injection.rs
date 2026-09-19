@@ -2,6 +2,10 @@
 // arm link origins): low-pass the wrench, gate the non-touching slots, clamp each slot, add the
 // contact-point dashpot and push it through that point's J^T. The gate, the clamp-before-dashpot order
 // and the dashpot's sign are what a copy gets wrong quietly.
+//
+// This is the half that says what a force DOES. The half that says how much — which point of a slot's
+// set carries what, from the world's report, this side's own penalty or a solved constraint — is
+// contact_law.rs, and the two are a plant's whole contact model (see that file's header).
 
 use control_math::mat::Mat;
 use control_math::vec3::Vec3;
@@ -24,7 +28,10 @@ pub struct ContactForce {
 pub struct ContactInjection {
     /// sensor low-pass time constant; 0 injects the raw readout
     pub tau: f64,
-    /// most one component of one slot may inject [N]
+    /// most one component of one POINT may inject [N]: the bound a report-commanded force is clamped to
+    /// (see `clamp`), and the number a plant shares out over a slot's contact set. A force decided by a
+    /// penalty or solved as a constraint is NOT bounded by it — those are bounded by the machine's own
+    /// stiffness and equations of motion, and the laws that decide them say so (contact_law.rs).
     pub f_max: f64,
     /// contact-point dashpot [N.s/m]
     pub damp: f64,
@@ -151,31 +158,25 @@ impl ContactInjection {
         mag2 >= self.floor * self.floor
     }
 
-    /// row applies world-frame component k of slot s: the clamped force, the contact-point dashpot
-    /// along that Jacobian row, and the J^T push of their sum. jl is the 3 x nv Jacobian of the point
-    /// the slot's contact acts at, vel the generalized velocities (same coordinate order as tau_c).
-    pub fn row(
-        &self,
-        s: usize,
-        k: usize,
-        smooth: &[f64],
-        jl: &Mat,
-        vel: &[f64],
-        tau_c: &mut [f64],
-    ) -> ContactForce {
-        let mut f = smooth[3 * s + k];
+    /// clamp is the bound a REPORT-commanded component is injected under: the most one component of one
+    /// point may carry [N]. It is stated here, once, because the force a law commands from a readout and
+    /// the bound that readout is trusted within are the same mechanism's numbers — see contact_law's
+    /// ReportContact, its only caller.
+    pub fn clamp(&self, f: f64) -> f64 {
         if f > self.f_max {
-            f = self.f_max;
+            self.f_max
         } else if f < -self.f_max {
-            f = -self.f_max;
+            -self.f_max
+        } else {
+            f
         }
-        self.row_at(f, k, jl, vel, tau_c)
     }
 
-    /// row_at is row with the force already in hand: it adds the contact-point dashpot along the row and
-    /// the J^T push of the sum. A sole touching the ground at SEVERAL points uses it — one row per point,
-    /// each with its own force and Jacobian — because the centre of pressure a balance law commands is
-    /// which point of the patch carries how much.
+    /// row_at adds the contact-point dashpot along one Jacobian row and the J^T push of the sum, given
+    /// the force already in hand. A sole touching the ground at SEVERAL points uses it — one row per
+    /// point, each with its own force and Jacobian — because the centre of pressure a balance law
+    /// commands is which point of the patch carries how much; the force itself comes from a law
+    /// (contact_law.rs) and the clamp, where a law applies one, has already been applied.
     pub fn row_at(
         &self,
         f: f64,

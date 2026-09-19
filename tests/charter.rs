@@ -55,12 +55,14 @@ fn every_import_is_control_math_or_our_own() {
         vec![
             "adapt.rs",
             "contact_injection.rs",
+            "contact_law.rs",
             "efference.rs",
             "lib.rs",
             "plant.rs"
         ],
         "the module list moved: the base is the contract, the efference copy, the contact model the \
-         plants share and the calibration both machines read, and nothing else"
+         plants share (what a force does and where it comes from) and the calibration both machines \
+         read, and nothing else"
     );
     for (name, text) in &files {
         for line in code_of(text).lines() {
@@ -169,6 +171,15 @@ fn nothing_here_names_an_engine_a_model_or_a_law() {
     assert!(
         ci.1.contains("pub struct ContactInjection") && ci.1.contains("pub fn smooth_into"),
         "src/contact_injection.rs no longer states the shared contact model"
+    );
+    let cl = src.iter().find(|(n, _)| n == "contact_law.rs").expect(
+        "src/contact_law.rs is gone: the laws a plant's contact force comes from are not here",
+    );
+    assert!(
+        cl.1.contains("pub trait ContactLaw")
+            && cl.1.contains("pub struct ReportContact")
+            && cl.1.contains("pub struct SolveContact"),
+        "src/contact_law.rs no longer states the contact laws"
     );
     let ada = src
         .iter()
