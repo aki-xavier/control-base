@@ -1,10 +1,9 @@
 [package]
 name = "control-base"
-description = "The control stack's product-neutral base: the Plant contract the controllers program against, and the efference copy both control lines keep. Interfaces and value types, no engine, no model, no layer."
+description = "The control stack's product-neutral base: the Plant contract a controller programs against, and the efference copy of what a layer commanded against what its sensor read. Interfaces and value types, no engine, no model, no layer."
 version = "0.1.0"
 edition = "2021"
-# 1.87 is `is_multiple_of`, which the pga crate's parity checks call; the sibling crates state the
-# same floor.
+# The toolchain floor: the oldest compiler this crate is built and tested with.
 rust-version = "1.87"
 license = "MIT"
 
@@ -14,7 +13,6 @@ license = "MIT"
 control-math = { path = "../control-math" }
 
 [lints.clippy]
-# The one default lint this crate does not follow, and the allowance it had as part of `simu`:
-# `Efference::observe` fills parallel channel arrays by index, so the index is the channel number
-# the two sides must agree on, not a slice's length.
+# The one default lint this crate does not follow: `Efference::observe` fills parallel channel arrays
+# by index, so the index is the channel number the two sides must agree on, not a slice's length.
 needless_range_loop = "allow"

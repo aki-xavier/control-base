@@ -1,12 +1,11 @@
 // charter.rs — the crate's own boundary, as a check rather than a promise. A base crate that grows a
 // dependency has stopped being a base, and the way that happens is never a decision: it is one
-// convenient `use`. Three claims, all read off the sources as text the way simu's own
-// tests/engine_isolation.rs reads its:
+// convenient `use`. Three claims, all read off the sources as text:
 //
 //   1. every module's imports are `control-math` or this crate's own;
-//   2. no source names an engine, a model, or a control line's law in CODE (comments may — these
-//      files document where their implementors and consumers live, and a check that forbade that
-//      prose would forbid the documentation);
+//   2. no source names an engine, a model, or a control law in CODE; the prose holds to the same
+//      rule, and the four lists below are the only place these words are written down, because a
+//      check has to name what it forbids;
 //   3. the dependency set in Cargo.toml is the one the charter states.
 
 use std::fs;
@@ -34,8 +33,8 @@ fn sources() -> Vec<(String, String)> {
     out
 }
 
-// code_of drops whole-line comments, so the prose that documents a boundary is not read as a crossing
-// of it.
+// code_of drops whole-line comments: the check is about what the sources do, and the comments are
+// prose about it rather than code.
 fn code_of(text: &str) -> String {
     let mut out: Vec<&str> = Vec::new();
     for line in text.lines() {
@@ -73,8 +72,9 @@ fn every_import_is_control_math_or_our_own() {
     }
 }
 
-/// No engine, no model, no control line. The lists are the names that would mean a boundary had been
-/// crossed, taken from the crates this one sits under and the two lines it is shared by.
+/// No engine, no model, no control law. The lists are the names that would mean a boundary had been
+/// crossed: an engine's own vocabulary, a model layer's types, concrete implementors of this crate's
+/// own contract, and the laws that sit above it.
 #[test]
 fn nothing_here_names_an_engine_a_model_or_a_law() {
     let forbidden: [(&str, &[&str]); 4] = [
@@ -90,7 +90,7 @@ fn nothing_here_names_an_engine_a_model_or_a_law() {
                 "MuJoCo",
             ],
         ),
-        // the model layer's types (../control-model)
+        // the model layer's types
         (
             "a model type",
             &[
@@ -112,9 +112,9 @@ fn nothing_here_names_an_engine_a_model_or_a_law() {
                 "FakeEnginePlant",
             ],
         ),
-        // the two lines' laws and layer programs: this crate sits below both
+        // the laws and layer programs above this crate, which it sits below
         (
-            "a control line's law",
+            "a control law",
             &[
                 "PlaneTaskLoop",
                 "PlaneDesign",

@@ -1,26 +1,24 @@
-// efference.rs — Efference, the copy of what a layer COMMANDED (simu's CORTEX_PROGRAM.md #4): a
-// sensory reading is the world's part plus the machine's own, so the copy splits it into
-// `measured = commanded (my own doing) + residual (the world's)`, which is what a contact detector
-// wants. It reads no plant and holds no model; it is not a filter, so a command DELAYED relative to
-// its reading subtracts the wrong thing — the caller states what it commanded this tick.
+// efference.rs — Efference, the copy of what a layer COMMANDED: a sensory reading is the world's
+// part plus the machine's own, so the copy splits it into `measured = commanded (my own doing) +
+// residual (the world's)`, which is what a contact detector wants. It reads no plant and holds no
+// model; it is not a filter, so a command DELAYED relative to its reading subtracts the wrong thing —
+// the caller states what it commanded this tick.
 
 /// Efference is what a layer commanded against what its sensors read, and the difference. The
-/// comparison is unconditional — any gating belongs at the USE (the walk runtime's
-/// `step_on_residual`) — and the arm's loop holds an instance of the same type: one channel per joint
-/// in torque [N.m] (`PlaneTaskLoop::eff`).
+/// comparison is unconditional — any gating belongs at the use, not here — and one instance holds one
+/// channel per thing commanded: a joint torque, a footing force, whatever the caller's channels are.
 #[derive(Clone, Debug, Default)]
 pub struct Efference {
-    /// what the layer commanded, one entry per channel: [N] on the legs' vertical forces, [N.m] on
-    /// the arm's joints
+    /// what the layer commanded, one entry per channel, in that channel's own unit
     pub commanded: Vec<f64>,
-    /// what the sensor read back, same channels and unit (the arm's comes from the plant's own step
-    /// rather than from a load cell)
+    /// what the sensor read back, same channels and unit — a plant's own step or a load cell, the
+    /// caller's choice
     pub measured: Vec<f64>,
     /// `measured - commanded`: the part of the reading that is NOT the machine's own doing
     pub residual: Vec<f64>,
     /// how many comparisons have been taken
     pub samples: usize,
-    /// the channels' unit, for `report` — empty means the legs' "N"
+    /// the channels' unit, as `report` prints it — empty means the default label
     pub unit: String,
 }
 
@@ -31,7 +29,7 @@ impl Efference {
 
     /// observe takes one tick's pair for the whole channel set and answers the total absolute
     /// residual in the channels' own unit. It resizes to the caller's channel count on the first
-    /// call, so a machine with a different number of legs needs no configuration.
+    /// call, so a machine with a different number of channels needs no configuration.
     pub fn observe(&mut self, commanded: &[f64], measured: &[f64]) -> f64 {
         let n = commanded.len().min(measured.len());
         if self.commanded.len() != n {
@@ -71,8 +69,8 @@ impl Efference {
         }
     }
 
-    /// report is the layer's state as one line, labelled with `unit` (empty, the default, means the
-    /// legs' "N"), for the caller's readout.
+    /// report is the layer's state as one line, labelled with `unit` (empty, the default, prints the
+    /// default label `N`), for the caller's readout.
     pub fn report(&self) -> String {
         let unit = if self.unit.is_empty() {
             "N"

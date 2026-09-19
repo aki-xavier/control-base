@@ -1,5 +1,5 @@
 // efference.rs — a layer's command against its sensor read, and the difference between them:
-// engine-free, and unconditional (the only gate is the consumer's, simu's GaitRuntime::step_on_residual).
+// engine-free, and unconditional: whatever gate there is belongs to the caller.
 
 use control_base::efference::Efference;
 
