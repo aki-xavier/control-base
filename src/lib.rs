@@ -1,6 +1,12 @@
 // control-base — the control stack's product-neutral base, as a project of its own.
 //
-// THREE MODULES AND NOTHING ELSE:
+// FOUR MODULES AND NOTHING ELSE:
+//   adapt              the cerebellar layer's error-driven calibration: a per-parameter trim with its
+//                      limits, its rate, the evidence it has accumulated and the trace of its recent
+//                      values, over errors the CALLER measures and orients. It holds no model of the
+//                      plant, imports nothing at all, and is here because BOTH machines read it —
+//                      the walk drives its runtime with it and the arm's learned-feedforward probe
+//                      is the other consumer.
 //   plant              the Plant contract a controller programs against: ten queries, every one of
 //                      them stated in control-math types. It is where it is because the contract's
 //                      POINT is that the dynamics backend can be swapped without the control law
@@ -25,6 +31,7 @@
 // inside one, every other would have to depend on it. So this crate is defined by what it is allowed
 // to name — its own types, and the arithmetic crate below it — and not by who consumes it.
 
+pub mod adapt;
 pub mod contact_injection;
 pub mod efference;
 pub mod plant;

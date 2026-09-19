@@ -1,10 +1,11 @@
 # control-base — the control stack's product-neutral base
 
 A project of its own, and not a module inside anything that uses it: the `Plant`
-contract, the efference copy and the contact model the plants share belong to the
-boundary, not to a side of it. MIT-licensed (see `LICENSE`).
+contract, the efference copy, the contact model the plants share and the calibration
+both machines read belong to the boundary, not to a side of it. MIT-licensed (see
+`LICENSE`).
 
-Three modules, no engine, no model, no layer:
+Four modules, no engine, no model, no layer:
 
 ```text
 plant              the Plant contract a controller programs against: ten queries,
@@ -21,6 +22,13 @@ contact_injection  the soft-constraint contact model the plants share: low-pass 
                    contact-point dashpot, push the sum through that point's J^T.
                    Arithmetic on numbers a plant read; it names no engine, and more
                    than one plant uses it, which is why it is stated here once.
+adapt              the cerebellar layer's error-driven calibration: a per-parameter
+                   trim with its limits, its rate, the evidence it has accumulated and
+                   the trace of its recent values, over errors the CALLER measures and
+                   orients. It holds no model of the plant and imports nothing at all;
+                   the walk drives its runtime with it and the arm's learned-feedforward
+                   probe is the other consumer, which is why it is here rather than
+                   under either.
 ```
 
 It depends on one crate, [`control-math`](../control-math), for the `Mat`, `Vec3`

@@ -52,9 +52,15 @@ fn every_import_is_control_math_or_our_own() {
     let files = sources();
     assert_eq!(
         files.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
-        vec!["contact_injection.rs", "efference.rs", "lib.rs", "plant.rs"],
-        "the module list moved: the base is the contract, the efference copy and the contact model \
-         the plants share, and nothing else"
+        vec![
+            "adapt.rs",
+            "contact_injection.rs",
+            "efference.rs",
+            "lib.rs",
+            "plant.rs"
+        ],
+        "the module list moved: the base is the contract, the efference copy, the contact model the \
+         plants share and the calibration both machines read, and nothing else"
     );
     for (name, text) in &files {
         for line in code_of(text).lines() {
@@ -128,7 +134,6 @@ fn nothing_here_names_an_engine_a_model_or_a_law() {
                 "Predictor",
                 "Keepout",
                 "Recruit",
-                "Adapt",
                 "Cpg",
                 "Stepper",
             ],
@@ -164,6 +169,14 @@ fn nothing_here_names_an_engine_a_model_or_a_law() {
     assert!(
         ci.1.contains("pub struct ContactInjection") && ci.1.contains("pub fn smooth_into"),
         "src/contact_injection.rs no longer states the shared contact model"
+    );
+    let ada = src
+        .iter()
+        .find(|(n, _)| n == "adapt.rs")
+        .expect("src/adapt.rs is gone: the shared calibration is not stated here");
+    assert!(
+        ada.1.contains("pub struct Adapt") && ada.1.contains("AdaptParam"),
+        "src/adapt.rs no longer states the shared calibration"
     );
 }
 
