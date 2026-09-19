@@ -3,20 +3,25 @@
 // The contract this replaces stated one machine's shape and left it unsaid: no base in the state
 // silently meant the base was welded, `compute_jacobian` answered for a frame nothing named, and a
 // machine whose base floats could not implement the trait at all. `PlantStructure` is what makes the
-// difference STATABLE, and these are the two statements that matter — a welded chain is braced by
-// construction, and a floating machine's brace has to come from its contacts, where a friction
-// contact is not a weld and does not substitute for one.
+// difference STATABLE, and these are the statements that matter — a welded chain is braced by
+// construction, a floating machine's brace has to come from its contacts (where a friction contact is
+// not a weld and does not substitute for one), and a task may be a POINT, which has no rotation to
+// report and no way to say so before `TaskMap` existed.
 
-use control_base::plant::{ContactKind, ExternalContact, PlantStructure};
+use control_base::plant::{ContactKind, ExternalContact, PlantStructure, TaskMap};
 
 /// bodies is a small named chain, so the tests read like a machine rather than like indices.
 fn bodies() -> Vec<String> {
     ["l1", "l2", "l3"].iter().map(|s| s.to_string()).collect()
 }
 
+fn tip() -> TaskMap {
+    TaskMap::Frame("tip".to_string())
+}
+
 #[test]
 fn a_welded_chain_declares_itself_braced_by_construction() {
-    let s = PlantStructure::fixed_base(3, bodies(), "tip".to_string());
+    let s = PlantStructure::fixed_base(3, bodies(), tip());
     assert_eq!(s.dof, 3, "the arm's DOF is its joints");
     assert_eq!(s.base_dof, 0, "a welded base is not a state");
     assert!(s.all_driven(), "every joint of a serial arm is driven");
@@ -31,8 +36,14 @@ fn a_welded_chain_declares_itself_braced_by_construction() {
     );
     assert!(s.has_body("l2") && !s.has_body("l9"));
     assert_eq!(
-        s.task_frame, "tip",
-        "the task frame is a NAME, not an assumption"
+        s.task_map,
+        tip(),
+        "the task is a KIND and a name, not an assumption"
+    );
+    assert!(!s.task_is_a_point());
+    assert!(
+        !s.has_point("com"),
+        "a welded chain's points of interest are all on links, where a frame answers for them"
     );
 }
 
@@ -46,7 +57,8 @@ fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
         base_dof: 6,
         contacts: Vec::new(),
         bodies: bodies(),
-        task_frame: "tip".to_string(),
+        points: Vec::new(),
+        task_map: tip(),
     };
     assert!(s.base_is_a_state());
     assert!(!s.all_driven(), "the base's six coordinates are undriven");
@@ -72,4 +84,30 @@ fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
         kind: ContactKind::Weld,
     });
     assert!(s.braced(), "a welded distal contact is a brace");
+}
+
+/// A task that is a POINT has no rotation, and the structure is where that is said. The centre of mass
+/// is the case this exists for: a mass-weighted quantity of the whole configuration, on no link, so it
+/// cannot be addressed as a frame and cannot be asked for an orientation.
+#[test]
+fn a_task_may_be_a_point_and_then_it_has_no_rotation_to_report() {
+    let mut s = PlantStructure {
+        dof: 9,
+        actuated: vec![false, false, false, false, false, false, true, true, true],
+        base_dof: 6,
+        contacts: Vec::new(),
+        bodies: bodies(),
+        points: vec!["com".to_string()],
+        task_map: TaskMap::Point("com".to_string()),
+    };
+    assert!(s.task_is_a_point(), "the task's KIND is data, not a guess");
+    assert_eq!(s.task_map.name(), "com");
+    assert!(s.has_point("com") && !s.has_point("l1"));
+    assert!(
+        !s.has_body("com"),
+        "a point is not a body: it is a function of the whole configuration, not a link's distal end"
+    );
+    // and the frame form is the other answer, not the same one
+    s.task_map = tip();
+    assert!(!s.task_is_a_point());
 }
