@@ -189,6 +189,20 @@ pub trait Plant {
     fn bias_torques(&mut self) -> Vec<f64>;
     fn gravity_torques(&mut self) -> Vec<f64>;
 
+    /// configuration_stamp is the quantity a loop uses to decide that the CONFIGURATION has moved —
+    /// and nothing else. Its one requirement is that it changes when the configuration does, in
+    /// `structure().dof` entries; it is never a position, is never differenced, and no controller may
+    /// read a coordinate out of it.
+    ///
+    /// It is separate from `joint_positions` because the two are not the same requirement, and one
+    /// machine in this tree needs the weaker one: a stance-held reduction's coordinates are a
+    /// velocity-level subspace of the machine's, so it has no position vector to hand over, while what
+    /// the loop actually asks for — "has the metric's configuration moved?" — it can answer. The
+    /// default IS `joint_positions`, so a plant whose coordinates are a configuration owes nothing here.
+    fn configuration_stamp(&mut self) -> Vec<f64> {
+        self.joint_positions()
+    }
+
     /// frame_pose / frame_jacobian / frame_full_jacobian are the FRAME mapping, addressed BY NAME:
     /// any of `structure().bodies`, or the task when it is a frame. The pose is (position, wxyz
     /// quaternion), the Jacobians are 3 x dof (linear) and 6 x dof ([linear; angular]).
