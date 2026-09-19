@@ -1,14 +1,17 @@
 // control-base — the control stack's product-neutral base, as a project of its own.
 //
 // FIVE MODULES AND NOTHING ELSE:
-//   adapt              the cerebellar layer's error-driven calibration: a per-parameter trim with its
-//                      limits, its rate, the evidence it has accumulated and the trace of its recent
-//                      values, over errors the CALLER measures and orients. It holds no model of the
-//                      plant, imports nothing at all, and is here because BOTH machines read it —
-//                      the walk drives its runtime with it and the arm's learned-feedforward probe
-//                      is the other consumer.
-//   plant              the Plant contract a controller programs against: ten queries, every one of
-//                      them stated in control-math types. It is where it is because the contract's
+//   adapt              a layer's error-driven calibration: a per-parameter trim with its limits, its
+//                      rate, the evidence it has accumulated and the trace of its recent values, over
+//                      errors the CALLER measures and orients. It holds no model of the plant and
+//                      imports nothing at all; it is here because more than one user keeps the same
+//                      trim, and a value type shared by more than one user may not live under any
+//                      one of them.
+//   plant              the Plant contract a controller programs against: the machine's STRUCTURE
+//                      as data (PlantStructure — DOF, which coordinates are driven, how many
+//                      leading ones are the base pose, the distal contacts and what each can
+//                      supply, the bodies, the declared task frame), the numeric core, and the
+//                      task mapping addressed BY NAME. It is where it is because the contract's
 //                      POINT is that the dynamics backend can be swapped without the control law
 //                      changing, so the file cannot live beside an implementation.
 //   efference          the copy of what a layer COMMANDED against what its sensor read, and their
@@ -22,9 +25,8 @@
 //                      the plant changing.
 //   contact_injection  what a decided force DOES: low-pass the wrench, gate the non-touching slots,
 //                      clamp each slot, add the contact-point dashpot, and push the sum through that
-//                      point's J^T. It names no engine, and it is here because more than one plant
-//                      uses it: it states once what a copy gets wrong quietly (the gate, the
-//                      clamp-before-dashpot order, the dashpot's sign).
+//                      point's J^T. It names no engine, and it states once what a copy gets wrong
+//                      quietly (the gate, the clamp-before-dashpot order, the dashpot's sign).
 //
 // THE CHARTER, which is what keeps this crate thin: zero-dependency value types, and the interfaces
 // that state a boundary. It names no engine, no model and no layer, and its dependency set is

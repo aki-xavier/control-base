@@ -1,7 +1,7 @@
 // contact_law.rs — the laws' own arithmetic, as checks: what each law commands and where it is silent,
 // what it does with a report and a geometry that disagree, and what the complementarity solve does to a
-// system whose answer is known by hand. The plants' suites pin the NUMBERS a machine produces under a
-// law; this one pins the laws.
+// system whose answer is known by hand. A plant's own suite pins the NUMBERS it produces under a law;
+// this one pins the laws.
 
 use control_base::contact_injection::ContactInjection;
 use control_base::contact_law::{
@@ -32,14 +32,15 @@ fn slot<'a>(
 }
 
 /// The report law is the world's word: the readout for the slot, shared over the set, clamped to what
-/// the slot may command. It is the arm's contact, and the clamp is where a readout becomes a force.
+/// the slot may command. It is the scheme for a rigid contact, and the clamp is where a readout becomes
+/// a force.
 #[test]
 fn the_report_law_takes_the_world_at_its_word() {
     let inj = ContactInjection::new(0.0, 300.0, 150.0, 0.0);
     let law = ReportContact;
     let mut out = Vec::new();
 
-    // one point, no geometry of this side's (the arm's slot): the report IS the force
+    // one point, no geometry on this side (a reported slot): the report IS the force
     assert!(law.decide_into(
         &slot(&inj, [10.0, -20.0, 150.0], true, &[0.0], 0.0, false),
         &mut out
@@ -91,8 +92,8 @@ fn the_penalty_law_is_its_own_geometry_only() {
     let law = PenaltyContact;
     let mut out = Vec::new();
 
-    // two points at 1 mm and 3 mm inside a 63 kN/m sole: each carries its own depth over the set's size,
-    // so the slot's total is k * sum(pen) / n
+    // two points at 1 mm and 3 mm inside a 63 kN/m patch: each carries its own depth over the set's
+    // size, so the slot's total is k * sum(pen) / n
     assert!(law.decide_into(
         &slot(&inj, [0.0, 0.0, 0.0], false, &[0.001, 0.003], 63000.0, true),
         &mut out
@@ -116,15 +117,15 @@ fn the_penalty_law_is_its_own_geometry_only() {
 
 /// The raised law is the report floored by the geometry — the larger of the two, point by point — and
 /// the case it exists for is the one where the two disagree: the world has stopped reporting while the
-/// foot is visibly in the floor.
+/// contact is visibly inside the surface.
 #[test]
 fn the_floored_law_raises_the_report_to_the_geometry() {
     let inj = ContactInjection::new(0.005, 600.0, 210.0, 0.05);
     let law = FlooredContact;
     let mut out = Vec::new();
 
-    // two points at 2 mm, a 63 kN/m sole, and a report of 100 N over the slot: each point's own penalty
-    // (63.0 N) is above its share of the report (50.0 N), so the geometry is what is injected
+    // two points at 2 mm, a 63 kN/m patch, and a report of 100 N over the slot: each point's own
+    // penalty (63.0 N) is above its share of the report (50.0 N), so the geometry is what is injected
     assert!(law.decide_into(
         &slot(
             &inj,
@@ -152,7 +153,7 @@ fn the_floored_law_raises_the_report_to_the_geometry() {
     ));
     assert_eq!(out, vec![[0.0, 0.0, 200.0], [0.0, 0.0, 200.0]]);
 
-    // THE CASE IT EXISTS FOR: the report has gone quiet and the soles are 2 mm inside the plate, so the
+    // THE CASE IT EXISTS FOR: the report has gone quiet and the patch is 2 mm inside the plate, so the
     // slot is live on its geometry alone (which the world's own gate cannot see)
     assert!(law.decide_into(
         &slot(&inj, [0.0, 0.0, 0.0], false, &[0.002, 0.002], 63000.0, true),
@@ -219,7 +220,7 @@ fn the_solve_stops_a_landing_at_the_plane() {
         lam[0]
     );
 
-    // THE SAME FOOT, ALREADY 2 mm INSIDE: the bound is the relaxed one (`beta * pen / dt`), so the
+    // THE SAME POINT, ALREADY 2 mm INSIDE: the bound is the relaxed one (`beta * pen / dt`), so the
     // solve pushes out a fifth of the penetration per step rather than flinging it at 0.2 m/s
     let cands = vec![ContactConstraint {
         jn: vec![1.0],
@@ -239,7 +240,7 @@ fn the_solve_stops_a_landing_at_the_plane() {
         lam[0]
     );
 
-    // A FOOT IN THE AIR ASKS FOR NOTHING: a point above the plane has a NEGATIVE bound, so its
+    // A POINT ABOVE THE SURFACE ASKS FOR NOTHING: a point above the plane has a NEGATIVE bound, so its
     // multiplier comes out zero on its own
     let cands = vec![ContactConstraint {
         jn: vec![1.0],

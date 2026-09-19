@@ -1,7 +1,7 @@
-// adapt.rs — Adapt, the cerebellar layer's error-driven calibration: a per-parameter trim (its
-// limits, its rate, the evidence it has accumulated, and the trace of its own recent values) over
-// errors the caller measures. It holds no model of the plant: the caller computes and orients every
-// error so that RAISING the trim reduces it. The layer map is in AGENTS.md, pinned by tests/layering.rs.
+// adapt.rs — a layer's error-driven calibration: a per-parameter trim (its limits, its rate, the
+// evidence it has accumulated, and the trace of its own recent values) over errors the caller
+// measures. It holds no model of the plant: the caller computes and orients every error so that
+// RAISING the trim reduces it.
 
 /// AdaptParam is one tuned quantity: its trim, its limits, its rate, and the evidence of whether it
 /// is still learning.
@@ -35,8 +35,8 @@ pub struct AdaptParam {
 }
 
 /// SUSPECT_FRAC is how far below a channel's own mean a sample's span must fall to count as a
-/// discipline violation: loose enough that a jittering interval never trips it, tight enough that the
-/// per-tick-vs-per-step mistake (a ratio of ~1750 on the walk) always does.
+/// discipline violation: loose enough that a jittering interval never trips it, tight enough that
+/// feeding a per-step channel at a tick's period always does.
 pub const SUSPECT_FRAC: f64 = 0.25;
 /// SUSPECT_WARMUP is how many samples a channel needs before its mean is trusted as a baseline: the
 /// first samples ARE the mean, so a channel's opening samples cannot be judged against it.
@@ -44,7 +44,8 @@ pub const SUSPECT_WARMUP: usize = 4;
 
 /// TRACE is how many of a parameter's own past values are kept: one per `learn` call, newest last, a
 /// bounded ring rather than a log. Counted in samples and not seconds, so the same 64 is a different
-/// horizon per channel (22.4 s per step, 12.8 ms per tick) and covers one step's delay.
+/// horizon per channel — a channel fed once per step holds far more time than one fed once per tick —
+/// and the depth covers one step's delay.
 pub const TRACE: usize = 64;
 
 /// Adapt holds the layer's parameters: pure arithmetic over errors the caller
@@ -238,11 +239,11 @@ impl Adapt {
         out
     }
 }
-/// LeadTrim is the learned feedforward of this row's Phase 5 (`CEREBELLUM_PROGRAM.md`): a trim on a
-/// reference's own lead (its velocity and acceleration terms) learned from the along-track error of a
-/// repeated movement. Only the SCALE is learned, not the shape (`TaskSpec.lead` puts the shape through
-/// J+) — a badly learned scale is a worse lead. The caller orients the error: `err_along > 0` must mean
-/// "behind its reference", so raising the trim reduces it.
+/// LeadTrim is a learned feedforward over a reference's own lead: a trim on the lead's velocity and
+/// acceleration terms, learned from the along-track error of a repeated movement. Only the SCALE is
+/// learned, not the shape (the caller puts the shape through the plant's J+) — a badly learned scale is
+/// a worse lead. The caller orients the error: `err_along > 0` must mean "behind its reference", so
+/// raising the trim reduces it.
 #[derive(Clone, Debug)]
 pub struct LeadTrim {
     /// the underlying parameter: one trim, its limits and its rate, held by `Adapt`
@@ -266,16 +267,16 @@ impl LeadTrim {
         self.ada.learn("lead", err_along, dt)
     }
 
-    /// observe_at is `observe` for a sample that arrived late: the error read at a launch is the
-    /// outcome of the placement the PREVIOUS launch's trim set, so `age` [s] counts in this channel's
+    /// observe_at is `observe` for a sample that arrived late: the error read at one step is the
+    /// outcome of the placement the PREVIOUS step's trim set, so `age` [s] counts in this channel's
     /// own `dt` (one sample per step) — `Adapt::learn_at`'s rule exactly.
     pub fn observe_at(&mut self, err_along: f64, dt: f64, age: f64) -> f64 {
         self.ada.learn_at("lead", err_along, age, dt)
     }
 
     /// scale is the multiplier a caller applies to the reference's lead terms: 1.0 with the trim at
-    /// zero — the shipped behaviour, bit for bit, which is what makes a caller's A/B against the
-    /// frozen arm a comparison of the LEARNING rather than of the wiring.
+    /// zero — the behaviour with no learning in it, bit for bit, which is what makes a caller's A/B
+    /// against a frozen channel a comparison of the LEARNING rather than of the wiring.
     pub fn scale(&self) -> f64 {
         1.0 + self.ada.trim("lead")
     }

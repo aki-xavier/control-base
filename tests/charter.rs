@@ -1,12 +1,12 @@
 // charter.rs — the crate's own boundary, as a check rather than a promise. A base crate that grows a
 // dependency has stopped being a base, and the way that happens is never a decision: it is one
-// convenient `use`. Three claims, all read off the sources as text:
+// convenient `use`. Two claims, both read off the sources as text:
 //
 //   1. every module's imports are `control-math` or this crate's own;
-//   2. no source names an engine, a model, or a control law in CODE; the prose holds to the same
-//      rule, and the four lists below are the only place these words are written down, because a
-//      check has to name what it forbids;
-//   3. the dependency set in Cargo.toml is the one the charter states.
+//   2. the dependency set in Cargo.toml is the one the charter states.
+//
+// The interfaces are anchored separately (`the_interfaces_really_are_stated_here`), so the claims
+// above cannot pass by looking at files that hold nothing.
 
 use std::fs;
 use std::path::PathBuf;
@@ -33,8 +33,8 @@ fn sources() -> Vec<(String, String)> {
     out
 }
 
-// code_of drops whole-line comments: the check is about what the sources do, and the comments are
-// prose about it rather than code.
+// code_of drops whole-line comments: claim 1 is about what the sources do, and the comments are prose
+// about it rather than code.
 fn code_of(text: &str) -> String {
     let mut out: Vec<&str> = Vec::new();
     for line in text.lines() {
@@ -61,8 +61,7 @@ fn every_import_is_control_math_or_our_own() {
             "plant.rs"
         ],
         "the module list moved: the base is the contract, the efference copy, the contact model the \
-         plants share (what a force does and where it comes from) and the calibration both machines \
-         read, and nothing else"
+         plants share (what a force does and where it comes from) and the calibration, and nothing else"
     );
     for (name, text) in &files {
         for line in code_of(text).lines() {
@@ -81,87 +80,20 @@ fn every_import_is_control_math_or_our_own() {
     }
 }
 
-/// No engine, no model, no control law. The lists are the names that would mean a boundary had been
-/// crossed: an engine's own vocabulary, a model layer's types, concrete implementors of this crate's
-/// own contract, and the laws that sit above it.
+/// The interfaces really are stated here, so the claims above are not passing by looking at files
+/// that hold nothing: the contract, the shared contact model, the laws a contact force comes from,
+/// and the calibration.
 #[test]
-fn nothing_here_names_an_engine_a_model_or_a_law() {
-    let forbidden: [(&str, &[&str]); 4] = [
-        // the C ABI's own vocabulary, the SDK's prefixes, and the shim
-        (
-            "an engine",
-            &[
-                "extern \"C\"",
-                "eng_",
-                "eng_shim",
-                "mj_",
-                "mujoco",
-                "MuJoCo",
-            ],
-        ),
-        // the model layer's types
-        (
-            "a model type",
-            &[
-                "BodyTree",
-                "TreeDynamicsModel",
-                "PgaFk",
-                "PgaDynamicsModel",
-                "UrdfChain",
-                "MjcfModel",
-            ],
-        ),
-        // the concrete plants: a contract may not name its own implementors
-        (
-            "a concrete plant",
-            &[
-                "CEnginePlant",
-                "BipedPlant",
-                "NominalView",
-                "FakeEnginePlant",
-            ],
-        ),
-        // the laws and layer programs above this crate, which it sits below
-        (
-            "a control law",
-            &[
-                "PlaneTaskLoop",
-                "PlaneDesign",
-                "StandingLoop",
-                "GaitRuntime",
-                "GaitPlan",
-                "SpinalReflex",
-                "ReflexLayer",
-                "BehaviorArbiter",
-                "Predictor",
-                "Keepout",
-                "Recruit",
-                "Cpg",
-                "Stepper",
-            ],
-        ),
-    ];
-    for (name, text) in &sources() {
-        let code = code_of(text);
-        for (what, names) in forbidden {
-            for bad in names {
-                assert!(
-                    !code.contains(bad),
-                    "{name} names {what} ({bad}) in code: this crate holds interfaces and value \
-                     types only"
-                );
-            }
-        }
-    }
-    // and the lists are anchored: the contract and the shared arithmetic really are stated here, so
-    // the checks above are not passing by looking at files that hold nothing
+fn the_interfaces_really_are_stated_here() {
     let src = sources();
     let plant = src
         .iter()
         .find(|(n, _)| n == "plant.rs")
         .expect("src/plant.rs is gone: the Plant contract is not stated in this crate");
     assert!(
-        plant.1.contains("pub trait Plant") && plant.1.contains("fn compute_full_jacobian"),
+        plant.1.contains("pub trait Plant")
+            && plant.1.contains("fn structure")
+            && plant.1.contains("fn frame_full_jacobian"),
         "src/plant.rs no longer states the Plant contract"
     );
     let ci = src

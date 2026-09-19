@@ -10,12 +10,12 @@
 // plant's contact model: a law says how much, the injection says what that does to the machine. A plant
 // that swaps its law swaps where its ground force comes from and nothing else.
 //
-// WHY IT IS HERE AND NOT IN A PLANT: two machines with two geometries state the same decision — an arm
-// whose world is a mesh wall and whose slots are link origins, a biped whose world is a plane and whose
-// slots are declared sole patches. The arithmetic (share the report over the set, raise it to the
-// penetration, bound it) is one statement for both, and a plant keeping its own copy is a plant that
-// gets the sharing order, the gate or the bound wrong quietly. What stays with a plant is its slot
-// layout, its FK, its Jacobians, its clamp and its record of what it injected.
+// WHY IT IS HERE AND NOT IN A PLANT: the decision is the same for every machine, whatever its contact
+// geometry — a patch sampled at several points, a single reported point, a declared set of link origins.
+// The arithmetic (share the report over the set, raise it to the penetration, bound it) is one statement
+// for all of them, and a plant keeping its own copy is a plant that gets the sharing order, the gate or
+// the bound wrong quietly. What stays with a plant is its slot layout, its FK, its Jacobians, its clamp
+// and its record of what it injected.
 
 use crate::contact_injection::ContactInjection;
 use control_math::mat::Mat;
@@ -25,7 +25,7 @@ use control_math::mat::Mat;
 /// number the plant has ALREADY computed, which is what keeps a law free of an engine, a model and a
 /// frame.
 pub struct ContactSlot<'a> {
-    /// this slot's own injection: the plant's numbers SHARED OUT over the slot's contact set (a sole
+    /// this slot's own injection: the plant's numbers SHARED OUT over the slot's contact set (a patch
     /// sampled at four points carries a quarter of the clamp, the dashpot and the friction gain each),
     /// and the very object the plant will inject the answer through. A law reads its `floor` and its
     /// `clamp` from here rather than being handed a second copy of the same number.
@@ -45,7 +45,7 @@ pub struct ContactSlot<'a> {
     /// this side's own stiffness for the slot's contact [N/m]: what a penalty reads and what a gate
     /// against a floor is stated with. Zero leaves the slot's geometry to the world.
     pub k: f64,
-    /// whether the slot's contact SET is this side's own — a declared sole rather than the world's own
+    /// whether the slot's contact SET is this side's own — a declared set rather than the world's own
     /// report. The one predicate that says which scheme MAY decide the slot.
     pub own_set: bool,
 }
@@ -94,9 +94,9 @@ pub trait ContactLaw {
 
 /// ReportContact is the world's report taken at its word: the readout for the slot, shared over the
 /// whole set (one point carries all of it, a patch shares it evenly), each component clamped to what
-/// the slot may command. It is the ARM's contact — a rigid wall against a link, where what the world
-/// reports IS the force at the point the plant injects it — and the honest default for a machine with
-/// no ground model of its own.
+/// the slot may command. It is the scheme for a rigid contact — a wall against a link, where what the
+/// world reports IS the force at the point the plant injects it — and the honest default for a machine
+/// with no ground model of its own.
 pub struct ReportContact;
 
 impl ContactLaw for ReportContact {
@@ -122,12 +122,12 @@ impl ContactLaw for ReportContact {
 
 /// PenaltyContact is THIS side's geometry and nothing else: `k * pen / n` at each point, the ground a
 /// machine can run with when no report reaches it at all — a mirror that is not stepping, a scheme the
-/// caller wants compared against the world's own. Because `k` is the stiffness of the machine's SOLE,
+/// caller wants compared against the world's own. Because `k` is the stiffness of the whole patch,
 /// dividing by the point count keeps a patch sampled at four points as stiff as the one point it is
 /// calibrated against (`k` at each of four points is four times as stiff, and launches the machine).
 ///
-/// It gates on its own geometry alone: a report under its floor is not evidence that the foot is off the
-/// ground when the geometry says it is in it, which is the same reason the raised law exists.
+/// It gates on its own geometry alone: a report under its floor is not evidence that the contact is off
+/// the ground when the geometry says it is in it, which is the same reason the raised law exists.
 pub struct PenaltyContact;
 
 impl ContactLaw for PenaltyContact {
@@ -149,10 +149,10 @@ impl ContactLaw for PenaltyContact {
 }
 
 /// FlooredContact is the report RAISED to this side's own geometry: the readout shared over the set by
-/// penetration, and each point's normal never under its own penalty (`k * pen / n`). It is the machine
-/// whose world is a plane and whose slots are declared sole patches: the world's sensor stops reporting
-/// exactly when a foot is visibly in the floor, and the geometry cannot, so the larger of the two is the
-/// force the ground is at least applying.
+/// penetration, and each point's normal never under its own penalty (`k * pen / n`). It is the scheme for
+/// a machine whose contact set is declared rather than reported: the world's sensor stops reporting
+/// exactly when a contact is visibly inside the floor, and the geometry cannot, so the larger of the two
+/// is the force the ground is at least applying.
 ///
 /// The clamp is deliberately NOT applied here. It is sized for what a report may SAY, while the two
 /// quantities this law raises are already bounded by the plant: the report's own share never exceeds what
@@ -196,8 +196,8 @@ impl ContactLaw for FlooredContact {
 /// instead of commanded from the state. One constraint per point — `pen - dt * v_n+ >= 0`, `f >= 0`,
 /// `f * (pen - dt * v_n+) = 0` — swept by projected Gauss-Seidel on the multipliers and pushed through
 /// each point's own Jacobian. A multiplier is whatever makes the trajectory admissible, so an
-/// asymmetry a law COMMANDS is not turned into LOAD the way a penalty's `k * pen` is (measured on the
-/// G1: the pressure point lands 45-64 mm from the CoM's projection, where statics requires 0).
+/// asymmetry a law COMMANDS is not turned into LOAD the way a penalty's `k * pen` is (a penalty force
+/// follows the geometry's asymmetry rather than making the trajectory admissible).
 ///
 /// A solved slot declares its points and nothing else: no report, no penalty, no gate, no dashpot. Every
 /// point of the set is a candidate — one far above the plane asks for a velocity bound it cannot
@@ -207,8 +207,8 @@ impl ContactLaw for FlooredContact {
 /// combined without inventing one.
 pub struct SolveContact {
     /// the fraction of a point's EXISTING penetration the solve pushes out per step [0, 1]. A point that
-    /// is not penetrating gets the exact one-step bound (`v_n+ >= pen/dt`), so a landing foot stops AT
-    /// the plane; 1.0 is the hard limit, 0.2 the value the biped's own plant carried.
+    /// is not penetrating gets the exact one-step bound (`v_n+ >= pen/dt`), so a landing point stops AT
+    /// the plane; 1.0 is the hard limit, and 0.2 is a conservative default.
     pub beta: f64,
     /// the Gauss-Seidel sweep count: accuracy rather than feasibility
     pub iters: usize,
@@ -246,8 +246,8 @@ impl SolveContact {
         if np == 0 || nv == 0 {
             return;
         }
-        // a_nc is the acceleration the solved feet do NOT feel, and d[p] the velocity one newton-second
-        // of point p's normal impulse buys the whole machine
+        // a_nc is the acceleration the solved points do NOT feel, and d[p] the velocity one
+        // newton-second of point p's normal impulse buys the whole machine
         let a_nc = sys.mass.solve(sys.rhs);
         let mut d: Vec<Vec<f64>> = Vec::with_capacity(np);
         let mut wpp = vec![0.0; np];
@@ -279,8 +279,8 @@ impl SolveContact {
             }
         }
         // the velocity bound each point asks for: `pen/dt` is the exact one-step non-penetration bound,
-        // NEGATIVE for a point above the plane, so a landing foot is stopped AT the plane and a foot in
-        // the air never binds. Existing penetration is the only place a relaxation belongs: an exact
+        // NEGATIVE for a point above the plane, so a landing point is stopped AT the plane and a point
+        // in the air never binds. Existing penetration is the only place a relaxation belongs: an exact
         // bound there would have to fling it out at metres per second.
         let mut b = vec![0.0; np];
         for p in 0..np {

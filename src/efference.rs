@@ -6,7 +6,7 @@
 
 /// Efference is what a layer commanded against what its sensors read, and the difference. The
 /// comparison is unconditional — any gating belongs at the use, not here — and one instance holds one
-/// channel per thing commanded: a joint torque, a footing force, whatever the caller's channels are.
+/// channel per thing commanded: a joint torque, a contact force, whatever the caller's channels are.
 #[derive(Clone, Debug, Default)]
 pub struct Efference {
     /// what the layer commanded, one entry per channel, in that channel's own unit

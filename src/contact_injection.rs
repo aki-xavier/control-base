@@ -1,7 +1,7 @@
-// contact_injection.rs — the soft-constraint contact model the plants share (biped soles, fingertips,
-// arm link origins): low-pass the wrench, gate the non-touching slots, clamp each slot, add the
-// contact-point dashpot and push it through that point's J^T. The gate, the clamp-before-dashpot order
-// and the dashpot's sign are what a copy gets wrong quietly.
+// contact_injection.rs — the soft-constraint contact model the plants share (a patch sampled at several
+// points, a single point, a link origin): low-pass the wrench, gate the non-touching slots, clamp each
+// slot, add the contact-point dashpot and push it through that point's J^T. The gate, the
+// clamp-before-dashpot order and the dashpot's sign are what a copy gets wrong quietly.
 //
 // This is the half that says what a force DOES. The half that says how much — which point of a slot's
 // set carries what, from the world's report, this side's own penalty or a solved constraint — is
@@ -23,7 +23,7 @@ pub struct ContactForce {
 
 /// ContactInjection is one plant's contact model: the numbers that turn a wrench readout into
 /// generalized force, and the arithmetic that applies them. The filter's memory is the plant's own
-/// fc_smooth buffer, indexed by that plant's slot layout.
+/// smoothed-wrench buffer, indexed by that plant's slot layout.
 #[derive(Clone, Debug)]
 pub struct ContactInjection {
     /// sensor low-pass time constant; 0 injects the raw readout
@@ -39,16 +39,17 @@ pub struct ContactInjection {
     pub floor: f64,
     /// normal_only makes the dashpot act along the contact NORMAL instead of on all three components,
     /// with normal its direction (the ground's +z for a walking machine): a tangential dashpot answers
-    /// a rolling foot's rotation with a horizontal push, which is friction by another name and is
-    /// already the engine's Coulomb model.
+    /// a rolling contact's rotation with a horizontal push, which is friction by another name and is
+    /// already the Coulomb friction the contact model carries.
     pub normal_only: bool,
     pub normal: Vec3,
     /// TANGENTIAL (friction) gain [N.s/m] and its Coulomb bound as a fraction of the normal force.
     /// Zero leaves the contact frictionless.
     pub fric: f64,
     pub mu: f64,
-    /// TORSIONAL friction about the contact normal [N.m.s/rad] and the arm its Coulomb bound is
-    /// taken over [m] — the sole's own half-width, the largest arm the patch offers. Zero disables it.
+    /// TORSIONAL friction about the contact normal [N.m.s/rad] and the lever arm its Coulomb bound is
+    /// taken over [m] — the patch's own half-width, the largest lever arm the patch offers. Zero
+    /// disables it.
     pub c_tor: f64,
     pub r_tor: f64,
 }
@@ -103,8 +104,9 @@ impl ContactInjection {
     }
 
     /// torsional_row applies the contact's TORSIONAL friction: a moment about the contact normal
-    /// opposing the foot's rate about it, bounded by mu * |f_n| * r_tor. ja is the node's 3 x nv ANGULAR
-    /// Jacobian, n the contact normal; the moment goes through the angular rows, not the linear ones.
+    /// opposing the contact point's rate about it, bounded by mu * |f_n| * r_tor. ja is the node's
+    /// 3 x nv ANGULAR Jacobian, n the contact normal; the moment goes through the angular rows, not the
+    /// linear ones.
     pub fn torsional_row(
         &self,
         ja: &Mat,
@@ -173,10 +175,10 @@ impl ContactInjection {
     }
 
     /// row_at adds the contact-point dashpot along one Jacobian row and the J^T push of the sum, given
-    /// the force already in hand. A sole touching the ground at SEVERAL points uses it — one row per
-    /// point, each with its own force and Jacobian — because the centre of pressure a balance law
-    /// commands is which point of the patch carries how much; the force itself comes from a law
-    /// (contact_law.rs) and the clamp, where a law applies one, has already been applied.
+    /// the force already in hand. A slot touching the ground at SEVERAL points uses it — one row per
+    /// point, each with its own force and Jacobian — because which point of a patch carries how much IS
+    /// what a centre of pressure names; the force itself comes from a law (contact_law.rs) and the
+    /// clamp, where a law applies one, has already been applied.
     pub fn row_at(
         &self,
         f: f64,
@@ -215,8 +217,8 @@ impl ContactInjection {
             let mut d_n = -self.damp * vc * nk;
             let mut applied_n = f + d_n;
             // A CONTACT CANNOT PULL: the dashpot may cancel the spring, never invert it, so the force
-            // along the normal is clamped to zero at most (unclamped, this plant injected -142 N of
-            // suction and dragged the machine down).
+            // along the normal is clamped to zero at most (unclamped, the dashpot injects suction and
+            // drags the machine down).
             if applied_n * nk < 0.0 {
                 applied_n = 0.0;
                 d_n = -f;
