@@ -51,7 +51,52 @@ pub fn quat_of_rotor(r: Multivector) -> Quat {
 /// motors never takes them apart. The translation is the ideal part, which the degenerate `e0` makes
 /// multiplicative rather than affine.
 pub fn motor_of_pose(p: Vec3, q: Quat) -> Multivector {
-    pga::translator(p.to_array()).gp(rotor_of_quat(q))
+    motor_of_rotor(p, rotor_of_quat(q))
+}
+
+/// motor_of_rotor: the same element with its rotation stated as the ALGEBRA's own rotor, which is what a
+/// machine holding its rotation as geometry already has. Why both readings exist as one product and not
+/// two: a plant that never names a quaternion still has to hand out the same motor as one that does, and
+/// `motor_of_pose` is this one read through the one conversion.
+pub fn motor_of_rotor(p: Vec3, r: Multivector) -> Multivector {
+    pga::translator(p.to_array()).gp(r)
+}
+
+/// motor_position: the translation a pose motor carries, as its action on the ORIGIN. Why the origin and
+/// not the ideal part read off by hand: `T(p) R` sends the origin to `p` for every `R`, while the ideal
+/// part carries the rotation applied to the translation, so reading it directly is right only at the
+/// identity — which is exactly the case a pose accessor cannot assume.
+pub fn motor_position(m: Multivector) -> Vec3 {
+    let c = m.apply(pga::point(0.0, 0.0, 0.0)).coords();
+    Vec3::new(c[0], c[1], c[2])
+}
+
+/// rotvec_between: the WORLD-axis rotvec that takes `current` to `target` — `target . current^T` read as a
+/// rotvec, which is the reading `Quat::rotvec_between` gives, with the rotations arriving as versors.
+///
+/// Why this is NOT the geometric pose error and both are kept: `pga_pose_error` is `B_e = -2 log(M_d ~M)`,
+/// whose translation and rotation halves are coupled through the tip offset, while this is the
+/// endpoint-referenced pair a world-axis task channel is written in. A loop that swaps one for the other is
+/// wrong by the tip's own lever arm and still converges, which is why `kinematics.rs` states the difference
+/// and its tests pin it.
+pub fn rotvec_between(target: Multivector, current: Multivector) -> Vec3 {
+    quat_of_rotor(target)
+        .to_mat3()
+        .mul(&quat_of_rotor(current).to_mat3().transposed())
+        .to_rotvec()
+}
+
+/// motor_rotation: the rotation a pose motor carries, dropping the translation — the scalar and the
+/// Euclidean-line part, which is everything a motor has that is not ideal.
+///
+/// Why it is a read and not a conjugation: `motor_of_rotor(p, r)` builds `T(p) . r`, and `T(p)`'s own part
+/// reaches only the IDEAL components of the product, so these come back as `r`'s own numbers and not as a
+/// rotation merely equal to it. That is what lets a caller that wants a rotation out of a pose keep the
+/// exact bits the pose was built from.
+pub fn motor_rotation(m: Multivector) -> Multivector {
+    let b = m.bivector_part();
+    m.grade(0)
+        .add(pga::mv_bivector(b[0], b[1], b[2], 0.0, 0.0, 0.0))
 }
 
 /// Footprint is where a friction contact's pressure may act, in that contact frame's own coordinates:
@@ -247,7 +292,7 @@ impl PlantStructure {
     }
 
     /// Why it is exposed as data: reading it is how a six-row quantity is avoided instead of acting
-    /// on the identity `task_pose` returns by convention, which is a placeholder and not a quantity.
+    /// on the identity `task_motor` carries by convention, which is a placeholder and not a quantity.
     pub fn task_is_a_point(&self) -> bool {
         matches!(self.task_map, TaskMap::Point(_))
     }
@@ -275,19 +320,29 @@ pub trait Plant {
         self.joint_positions()
     }
 
-    /// The frame mapping, addressed by name. Why the pose carries its convention: the quaternion is
-    /// wxyz, and the two Jacobians are 3 x dof (linear) and 6 x dof ([linear; angular]).
-    fn frame_pose(&mut self, name: &str) -> (Vec3, Quat);
+    /// The frame mapping, addressed by name, as ONE PGA MOTOR `T(p) R` (`motor_of_rotor`). Why the pose is a
+    /// motor and not a pair: a machine holds its rotation as geometry, and a pair would make every one of them
+    /// build a quaternion it never had. A caller that wants only the position asks `frame_position`, which is
+    /// exact where reading one back out of the motor is not. The two Jacobians are 3 x dof (linear) and
+    /// 6 x dof ([linear; angular]).
+    fn frame_motor(&mut self, name: &str) -> Multivector;
     fn frame_jacobian(&mut self, name: &str) -> Mat;
     fn frame_full_jacobian(&mut self, name: &str) -> Mat;
 
-    /// The SAME frame pose, as one PGA motor (`motor_of_pose`), for the callers that read geometry
-    /// through the algebra: without it every one of them reassembles the pair itself, and a pose built
-    /// per caller is as many conventions as there are callers. It answers for exactly the names
-    /// `frame_pose` answers for, so a caller cannot ask for a motor of something it cannot ask a pose of.
-    fn frame_motor(&mut self, name: &str) -> Multivector {
-        let (p, q) = self.frame_pose(name);
-        motor_of_pose(p, q)
+    /// The frame's POSITION on its own. Why it is stated and not left to `motor_position` on the motor above:
+    /// a caller that wants only the position would pay for a whole pose, and — what settles it — building the
+    /// motor and reading the position back out is not the identity in floating point, so a machine whose
+    /// position is a raw frame origin would hand out a number that has been through `translator` and back. A
+    /// machine with no cheaper answer inherits the round trip.
+    fn frame_position(&mut self, name: &str) -> Vec3 {
+        motor_position(self.frame_motor(name))
+    }
+
+    /// The frame's ROTATION on its own, as the algebra's rotor. Why it is stated for the same reason
+    /// `frame_position` is: a caller that wants only the rotation should not have to hold a pose, and the
+    /// read is exact where taking the motor apart by hand is a place to get the convention wrong.
+    fn frame_rotation(&mut self, name: &str) -> Multivector {
+        motor_rotation(self.frame_motor(name))
     }
 
     /// The non-frame points, addressed by name. Why they are not frames: a point is a quantity of
@@ -304,8 +359,18 @@ pub trait Plant {
     /// a three-row mapping, but only a frame has a rotation.
     fn task_position(&mut self) -> Vec3 {
         match self.structure().task_map {
-            TaskMap::Frame(f) => self.frame_pose(&f).0,
+            TaskMap::Frame(f) => self.frame_position(&f),
             TaskMap::Point(p) => self.point_position(&p),
+        }
+    }
+
+    /// The task's ROTATION on its own. Why the point case is not an error: a point has no orientation, so
+    /// the identity rotor is the convention — the same one `task_motor` carries — and
+    /// `structure().task_is_a_point()` is how a caller avoids reading it as one.
+    fn task_rotation(&mut self) -> Multivector {
+        match self.structure().task_map {
+            TaskMap::Frame(f) => self.frame_rotation(&f),
+            TaskMap::Point(_) => pga::rotor_identity(),
         }
     }
 
@@ -316,13 +381,15 @@ pub trait Plant {
         }
     }
 
-    /// Why the degenerate answers are conventions and not quantities: a point has no orientation, so
-    /// the identity rotation stands in for one and the empty matrix is the "no such matrix"
-    /// sentinel. `structure().task_is_a_point()` is how both are avoided.
-    fn task_pose(&mut self) -> (Vec3, Quat) {
+    /// The task pose as one PGA motor: the task's frame's own motor, or a point's position with no rotation.
+    /// Why the point case is the same caveat and not a new one: a point has no orientation, so the rotation
+    /// carried here is the identity convention. Read it only when `structure().task_is_a_point()` is false; a
+    /// caller that wants a motor of a frame and knows which frame asks `frame_motor` for it by name and never
+    /// meets the convention at all.
+    fn task_motor(&mut self) -> Multivector {
         match self.structure().task_map {
-            TaskMap::Frame(f) => self.frame_pose(&f),
-            TaskMap::Point(p) => (self.point_position(&p), Quat::IDENTITY),
+            TaskMap::Frame(f) => self.frame_motor(&f),
+            TaskMap::Point(p) => motor_of_rotor(self.point_position(&p), pga::rotor_identity()),
         }
     }
 
@@ -331,16 +398,6 @@ pub trait Plant {
             TaskMap::Frame(f) => self.frame_full_jacobian(&f),
             TaskMap::Point(_) => Mat::zeros(0, 0),
         }
-    }
-
-    /// The task pose as one PGA motor, the same reading `task_pose` gives. Why the point case is the
-    /// same caveat and not a new one: a point has no orientation, so the rotation carried here is the
-    /// identity convention `task_pose` already stands in with. Read it only when
-    /// `structure().task_is_a_point()` is false; a caller that wants a motor of a frame and knows which
-    /// frame asks `frame_motor` for it by name and never meets the convention at all.
-    fn task_motor(&mut self) -> Multivector {
-        let (p, q) = self.task_pose();
-        motor_of_pose(p, q)
     }
 
     /// The command the machine's own actuators take, from a generalized force in the coordinates

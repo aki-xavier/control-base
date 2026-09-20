@@ -6,12 +6,13 @@
 // conversion kept at the base is one copy of the convention for every crate above it.
 //
 // What the checks hold: the rotor's action is the rotation the contract's quaternion means, the motor's
-// action is `T(p) R` and not `R T(p)`, the defaults really are the pose accessors read through the
-// conversion, a point task's motor carries the same identity convention `task_pose` does, and two
-// motors compose by ONE product — which is the whole reason for the type.
+// action is `T(p) R` and not `R T(p)`, the frame's motor really is the pose the machine states while its
+// position and rotation read back out of it exactly, a point task's motor and rotation carry the same
+// identity convention, and two motors compose by ONE product — the whole reason for the type.
 
 use control_base::plant::{
-    motor_of_pose, quat_of_rotor, rotor_of_quat, Plant, PlantStructure, TaskMap,
+    motor_of_pose, motor_of_rotor, quat_of_rotor, rotor_of_quat, rotvec_between, Plant,
+    PlantStructure, TaskMap,
 };
 use control_math::mat::Mat;
 use control_math::quat::Quat;
@@ -81,9 +82,14 @@ impl Plant for Probe {
         vec![0.0]
     }
 
-    fn frame_pose(&mut self, name: &str) -> (Vec3, Quat) {
+    fn frame_motor(&mut self, name: &str) -> Multivector {
         assert_eq!(name, "tip", "this machine has one frame");
-        (tip_pos(), tip_rot())
+        motor_of_rotor(tip_pos(), rotor_of_quat(tip_rot()))
+    }
+
+    fn frame_position(&mut self, name: &str) -> Vec3 {
+        assert_eq!(name, "tip", "this machine has one frame");
+        tip_pos()
     }
 
     fn frame_jacobian(&mut self, _name: &str) -> Mat {
@@ -171,23 +177,39 @@ fn the_motor_rotates_then_translates() {
     );
 }
 
-/// The trait's defaults are the pose accessors read through the one conversion — and the task motor is
-/// the same element the task's frame reports, not a second reading of it.
+/// The frame accessor IS the motor, and the task motor is that same element rather than a second reading of
+/// it; the position and the rotation are that element read back out, each exactly.
 #[test]
-fn the_defaults_are_the_pose_accessors_read_through_the_conversion() {
+fn the_task_motor_is_the_frames_own_motor_and_its_halves_read_out_exactly() {
     let mut p = probe(TaskMap::Frame("tip".to_string()));
-    let (pos, rot) = p.frame_pose("tip");
-    let want = motor_of_pose(pos, rot);
+    let want = motor_of_rotor(tip_pos(), rotor_of_quat(tip_rot()));
     assert_eq!(
         p.frame_motor("tip").to_matrix(),
         want.to_matrix(),
-        "frame_motor is not motor_of_pose(frame_pose)"
+        "the frame's motor is not the pose this machine states"
     );
-    assert_eq!(p.task_motor().to_matrix(), want.to_matrix());
+    assert_eq!(
+        p.task_motor().to_matrix(),
+        want.to_matrix(),
+        "the task motor is not its frame's own motor"
+    );
+    // and the two halves are that element read out EXACTLY: the position out of the sandwich, the rotation
+    // off the scalar and the line part, neither of which rounds on the way back out
+    assert!(
+        close(p.task_position(), tip_pos()),
+        "the task's position is {:?} where the machine states {:?}",
+        p.task_position(),
+        tip_pos()
+    );
+    assert_eq!(
+        p.task_rotation().values,
+        rotor_of_quat(tip_rot()).values,
+        "the task's rotation is not the versor the frame's pose was built from, term for term"
+    );
 }
 
-/// A task that is a POINT has no rotation, so its motor carries the identity convention `task_pose`
-/// already stands in with — and `task_is_a_point()` is how a caller avoids reading it as one.
+/// A task that is a POINT has no rotation, so its motor and its rotation carry the identity convention —
+/// and `task_is_a_point()` is how a caller avoids reading them as quantities.
 #[test]
 fn a_point_tasks_motor_carries_the_convention_and_not_a_rotation() {
     let mut p = probe(TaskMap::Point("com".to_string()));
@@ -197,7 +219,7 @@ fn a_point_tasks_motor_carries_the_convention_and_not_a_rotation() {
     assert_eq!(
         m.to_matrix(),
         want.to_matrix(),
-        "a point task's motor is its position with no rotation, the same convention task_pose uses"
+        "a point task's motor is its position with no rotation, the convention both accessors carry"
     );
     // the convention is visible as one: it does not turn the point's own axes
     let local = Vec3::new(1.0, 0.0, 0.0);
@@ -264,5 +286,32 @@ fn the_quaternion_and_rotor_readings_are_exact_inverses() {
         worst == 0.0,
         "the rotor reading and the quaternion reading disagree by {worst:.3e}: one of the two has \
          moved, and every pose handed across the contract is converted by them"
+    );
+}
+
+/// The world rotvec read off two VERSORS is the number the quaternion reading gives for the same two
+/// rotations, term for term. Why that is the claim worth pinning: a task loop states its target as a rotor
+/// now, and the numbers it publishes were measured with the quaternion form — a reading that merely means
+/// the same rotation would move every one of them in the last bits.
+#[test]
+fn the_rotor_rotvec_is_the_number_the_quaternion_reading_gives() {
+    let axis = Vec3::new(0.31, -0.52, 0.79).normalized();
+    let mut worst = 0.0f64;
+    for (target_angle, current_angle) in [(0.2, -0.7), (1.3, 2.9), (-2.0, 0.4), (0.0, 0.0)] {
+        let tq = Quat::from_mat3(&Mat::from_axis_angle(axis, target_angle));
+        let cq = Quat::from_mat3(&Mat::from_axis_angle(
+            Vec3::new(1.0, 0.0, 0.0),
+            current_angle,
+        ));
+        let by_quat = Quat::rotvec_between(tq, cq);
+        let by_rotor = rotvec_between(rotor_of_quat(tq), rotor_of_quat(cq));
+        worst = worst
+            .max((by_quat.x - by_rotor.x).abs())
+            .max((by_quat.y - by_rotor.y).abs())
+            .max((by_quat.z - by_rotor.z).abs());
+    }
+    assert!(
+        worst == 0.0,
+        "the versor reading and the quaternion reading differ by {worst:.3e}"
     );
 }
