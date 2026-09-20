@@ -19,6 +19,12 @@ license = "MIT"
 control-math = { path = "../control-math" }
 pga = { path = "../pga" }
 
+# A DEV-dependency only, and the charter above is unchanged by it: the comment rules, which this
+# project's own test holds it to (tests/comment_why.rs). It reads text, has no dependencies of its own,
+# and nothing in `src/` names it, so the base's `[dependencies]` set is still exactly the two below it.
+[dev-dependencies]
+comment-why = { path = "../comment-why" }
+
 [lints.clippy]
 # The one default lint this crate does not follow: `Efference::observe` fills parallel channel arrays
 # by index, so the index is the channel number the two sides must agree on, not a slice's length.

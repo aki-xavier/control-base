@@ -25,7 +25,7 @@ fn the_residual_is_the_reading_the_machine_did_not_do_itself() {
     let mut e3 = Efference::new();
     e3.observe(&[0.0], &[0.0]);
     assert_eq!(e3.external_share(0), 0.0);
-    // there is no off switch: a fresh copy has simply not been handed a pair yet
+    // no off switch: a fresh copy has been handed no pair yet, and reports zero samples rather than failing
     let e4 = Efference::new();
     assert_eq!(e4.samples, 0);
     assert_eq!(e4.residual(0), 0.0);

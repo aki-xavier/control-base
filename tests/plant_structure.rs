@@ -8,7 +8,7 @@
 // not a weld and does not substitute for one), and a task may be a POINT, which has no rotation to
 // report and no way to say so before `TaskMap` existed.
 
-use control_base::plant::{ContactKind, ExternalContact, PlantStructure, TaskMap};
+use control_base::plant::{ContactKind, ExternalContact, Footprint, PlantStructure, TaskMap};
 
 /// bodies is a small named chain, so the tests read like a machine rather than like indices.
 fn bodies() -> Vec<String> {
@@ -70,7 +70,10 @@ fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
     // A foot does NOT substitute for a weld: it holds one direction, and only in compression.
     s.contacts = vec![ExternalContact {
         frame: "foot_l".to_string(),
-        kind: ContactKind::Friction { mu: 0.6 },
+        kind: ContactKind::Friction {
+            mu: 0.6,
+            footprint: Footprint::POINT,
+        },
     }];
     assert!(
         !s.braced(),

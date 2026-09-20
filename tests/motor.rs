@@ -10,7 +10,9 @@
 // conversion, a point task's motor carries the same identity convention `task_pose` does, and two
 // motors compose by ONE product — which is the whole reason for the type.
 
-use control_base::plant::{motor_of_pose, rotor_of_quat, Plant, PlantStructure, TaskMap};
+use control_base::plant::{
+    motor_of_pose, quat_of_rotor, rotor_of_quat, Plant, PlantStructure, TaskMap,
+};
 use control_math::mat::Mat;
 use control_math::quat::Quat;
 use control_math::vec3::Vec3;
@@ -231,5 +233,36 @@ fn two_motors_compose_by_one_product_and_the_order_is_the_action() {
     assert!(
         close(act(want, x), by_seq),
         "the product is not the motor of (p1 + R1 p2, R1 R2)"
+    );
+}
+
+/// The pair `rotor_of_quat` / `quat_of_rotor` must be an EXACT inverse, not merely two rotations that look
+/// alike: the crate above reads a base pose back through these four numbers, and a sign slip between the two
+/// directions is a rotation by the INVERSE angle — which is why the numbers are compared here and not the
+/// rotations they mean, and why the samples include a non-unit one, where the map's linearity is the claim.
+#[test]
+fn the_quaternion_and_rotor_readings_are_exact_inverses() {
+    let mut worst = 0.0f64;
+    for (w, x, y, z) in [
+        (1.0, 0.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0, 0.0),
+        (0.0, 0.0, 0.0, 1.0),
+        (0.5, -0.5, 0.5, -0.5),
+        (0.6, 0.8, 0.0, 0.0),
+        (2.0, -3.0, 0.5, 1.5),
+    ] {
+        let q = Quat { w, x, y, z };
+        let back = quat_of_rotor(rotor_of_quat(q));
+        worst = worst
+            .max((back.w - q.w).abs())
+            .max((back.x - q.x).abs())
+            .max((back.y - q.y).abs())
+            .max((back.z - q.z).abs());
+    }
+    assert!(
+        worst == 0.0,
+        "the rotor reading and the quaternion reading disagree by {worst:.3e}: one of the two has \
+         moved, and every pose handed across the contract is converted by them"
     );
 }

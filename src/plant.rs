@@ -28,6 +28,23 @@ pub fn rotor_of_quat(q: Quat) -> Multivector {
     pga::mv_scalar(q.w).sub(pga::mv_bivector(q.z, -q.y, q.x, 0.0, 0.0, 0.0))
 }
 
+/// quat_of_rotor: the INVERSE reading of `rotor_of_quat`, and why the pair lives together — the signs
+/// below are exactly the ones that function subtracts, and a second copy of them is where the two would
+/// drift apart.
+///
+/// Why it is the literal inverse rather than a matrix round trip through `Quat::from_mat3`: that route
+/// renormalizes the sign of `w`, so it would return a rotation equal to `r` but not the four numbers `r`
+/// carries, and `rotor_of_quat(quat_of_rotor(r))` is what the callers above are entitled to.
+pub fn quat_of_rotor(r: Multivector) -> Quat {
+    let b = r.bivector_part();
+    Quat {
+        w: r.scalar_part(),
+        x: -b[2],
+        y: b[1],
+        z: -b[0],
+    }
+}
+
 /// motor_of_pose: a pose as one PGA motor, `T(p) R` — the rotation applied first, then the translation.
 /// Why this is worth a type: the (position, rotation) PAIR is affine — composing two poses is a matrix
 /// product and a vector addition — while a motor composes by one product, so a caller holding poses as
@@ -37,6 +54,79 @@ pub fn motor_of_pose(p: Vec3, q: Quat) -> Multivector {
     pga::translator(p.to_array()).gp(rotor_of_quat(q))
 }
 
+/// Footprint is where a friction contact's pressure may act, in that contact frame's own coordinates:
+/// the normal is the frame's +z, the patch runs `front` ahead and `back` behind the point the ground
+/// acts at (`offset`), and `half_w` across. Why a patch and not a point: the wrench a sole supplies
+/// carries a MOMENT, and the constraint such a contact really lives under is that the moment be one a
+/// pressure distribution inside the patch produces — a point contact could hold no ankle moment at
+/// all, which is the direction a standing machine's balance is held in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Footprint {
+    /// where the patch sits in the contact frame [m]: the point the ground acts at
+    pub offset: Vec3,
+    /// travel along the frame's x, behind and ahead of `offset` [m], both >= 0
+    pub back: f64,
+    pub front: f64,
+    /// half extent across the frame's y [m], >= 0
+    pub half_w: f64,
+}
+
+impl Footprint {
+    /// A patch of no extent at the frame's origin — what a POINT contact supplies, and the declaration
+    /// that no moment about that contact can be held.
+    pub const POINT: Footprint = Footprint {
+        offset: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        back: 0.0,
+        front: 0.0,
+        half_w: 0.0,
+    };
+
+    /// Clamps a pressure point's offset, in the frame's x and y, into the patch. Why it reports the
+    /// move: a pressure point at the edge is the state every balance authority is spent at, and a
+    /// caller that cannot see it has no anti-windup and no readout.
+    pub fn clamp(&self, dx: f64, dy: f64) -> (f64, f64, bool) {
+        let mut x = dx;
+        let mut y = dy;
+        let mut moved = false;
+        if x > self.front {
+            x = self.front;
+            moved = true;
+        } else if x < -self.back {
+            x = -self.back;
+            moved = true;
+        }
+        if y > self.half_w {
+            y = self.half_w;
+            moved = true;
+        } else if y < -self.half_w {
+            y = -self.half_w;
+            moved = true;
+        }
+        (x, y, moved)
+    }
+
+    /// The travel left before the nearest edge [m]. Why the minimum over the four: the authority left is
+    /// bounded by whichever edge the pressure point reaches first, and that distance times the normal
+    /// load IS the moment the contact can still add.
+    pub fn margin(&self, dx: f64, dy: f64) -> f64 {
+        let mut m = self.front - dx;
+        if self.back + dx < m {
+            m = self.back + dx;
+        }
+        if self.half_w - dy < m {
+            m = self.half_w - dy;
+        }
+        if self.half_w + dy < m {
+            m = self.half_w + dy;
+        }
+        m
+    }
+}
+
 /// ContactKind is what the environment supplies at one frame. The two regimes are not one scaled:
 /// a demand outside a friction cone is unsupported rather than saturated, and the contact breaks.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,13 +134,20 @@ pub enum ContactKind {
     /// Holds all six directions at any magnitude, so a wrench demand written in this frame is
     /// realizable verbatim.
     Weld,
-    /// Unilateral and friction-limited: `f_z >= 0`, `|f_t| <= mu f_z`.
-    Friction { mu: f64 },
+    /// Unilateral and friction-limited: `f_z >= 0`, `|f_t| <= mu f_z`, acting somewhere in `footprint`.
+    /// Why the patch is stated with the cone and not left to the caller: the moment a contact can supply
+    /// is the normal force times the distance its pressure point may travel, so a cone without a patch
+    /// does not say what the contact holds.
+    Friction { mu: f64, footprint: Footprint },
 }
 
 /// ExternalContact is one distal source of external wrench: the frame it acts at, and what it can
 /// supply there. The base's weld is stated by `base_dof` rather than repeated here, so this list is
 /// the distal contacts alone.
+///
+/// `frame` is a name the rest of this contract answers for — `frame_pose` and `frame_full_jacobian` —
+/// because a load distribution has to ask for the mapping the wrench is transmitted through, and a
+/// contact named something no Jacobian answers for would be a declaration nobody can act on.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExternalContact {
     pub frame: String,
@@ -244,5 +341,16 @@ pub trait Plant {
     fn task_motor(&mut self) -> Multivector {
         let (p, q) = self.task_pose();
         motor_of_pose(p, q)
+    }
+
+    /// The command the machine's own actuators take, from a generalized force in the coordinates
+    /// `structure()` declared. Why the PLANT owes this and a controller does not: forming a force in
+    /// those coordinates is all a loop can do, and they are the actuators only for a machine that is
+    /// fully actuated in its own configuration — a stance-held reduction is a VELOCITY-LEVEL subspace,
+    /// where the same force has to be lifted back onto the joints, and which of the lift's directions
+    /// to spend is a policy its own model has to state rather than a caller invent. The default IS the
+    /// identity, so a machine whose coordinates are its torques owes nothing here.
+    fn realize_command(&mut self, tau: &[f64]) -> Vec<f64> {
+        tau.to_vec()
     }
 }

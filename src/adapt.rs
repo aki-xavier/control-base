@@ -2,7 +2,8 @@
 // and guessing one would build in a machine's convention. So an error arrives already oriented —
 // raising the trim must reduce it — and this is arithmetic over numbers handed in.
 
-/// AdaptParam is one tuned quantity and the evidence it has accumulated.
+/// One tuned quantity, with the evidence a caller needs to tell a parameter still walking toward its
+/// target from one already sitting at a bias — which a trim alone cannot say.
 #[derive(Clone, Debug)]
 pub struct AdaptParam {
     pub name: String,
