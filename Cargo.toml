@@ -1,6 +1,6 @@
 [package]
 name = "control-base"
-description = "The control stack's product-neutral base: the Plant contract a controller programs against, and the efference copy of what a layer commanded against what its sensor read. Interfaces and value types, no engine, no model, no layer."
+description = "The control stack's product-neutral base: the Plant contract, the shared contact model and the efference copy. Interfaces and value types, no engine and no model."
 version = "0.1.0"
 edition = "2021"
 # The toolchain floor: the oldest compiler this crate is built and tested with.

@@ -1,10 +1,9 @@
-// adapt.rs — a layer's own arithmetic: where its integral rule comes to rest, what its limits do, and
-// what it does with an error that has no bias in it. Engine-free.
-// Assertions that need an absolute value spell it out: the rule approaches the null from BELOW, so a
-// signed comparison would be satisfied by a trim that never arrives.
+// adapt.rs — the calibration's own arithmetic. Why assertions that need an absolute value spell it
+// out: the rule approaches the null from BELOW, so a signed comparison would be satisfied by a trim
+// that never arrives.
 
-/// converge runs the layer against a synthetic plant whose error is a known linear function
-/// of the trim, err(g) = e0 - c * g, so the fixed point e0 / c can be asserted directly.
+/// Why the model is synthetic and linear: with err(g) = e0 - c * g the fixed point e0 / c is known by
+/// hand, so the rule can be asserted rather than eyeballed.
 use control_base::adapt::{Adapt, LeadTrim};
 
 fn converge(rate: f64, e0: f64, c: f64, dt: f64, steps: usize, lo: f64, hi: f64) -> (f64, f64) {
@@ -33,9 +32,9 @@ fn the_integral_rule_comes_to_rest_at_the_null() {
         "the trim settled at {got}, want {want}"
     );
     assert!(err > -5e-3 && err < 5e-3, "the error left is {err}");
-    // the trim the layer holds starts at 0.0 (`add` writes it, `learn` returns it), so the 1000
-    // steps below walk 0 up to the null: measured, g ends 3.6e-3 short, which is what the 1e-2
-    // tolerance is sized for (0.996^1000 leaves 1.8% of the walk unrun)
+    // the trim starts at 0.0 (`add` writes it, `learn` returns it), so the 1000 steps below walk 0 up
+    // to the null: measured, g ends 3.6e-3 short, which is what the 1e-2 tolerance is sized for
+    // (0.996^1000 leaves 1.8% of the walk unrun)
     let mut a = Adapt::new();
     a.add("g", -10.0, 10.0, 2.0);
     let mut g = want;
@@ -50,8 +49,8 @@ fn the_integral_rule_comes_to_rest_at_the_null() {
 
 #[test]
 fn the_limits_stop_a_calibration_walking_off() {
-    // a correction larger than the caller ever tested must not be reachable: a persistent error
-    // drives the trim to its limit and stays there, and the error it still sees reports the ceiling
+    // a correction larger than anything ever tested must not be reachable: a persistent error drives
+    // the trim to its limit and stays there, and the error it still sees reports the ceiling
     let (got, err) = converge(20.0, 1.0, 0.001, 1e-3, 20000, -0.05, 0.05);
     assert_eq!(got, 0.05);
     assert!(err > 0.5, "the error at the ceiling is only {err}");
@@ -75,7 +74,7 @@ fn a_zero_mean_error_does_not_accumulate() {
 
 #[test]
 fn an_unknown_parameter_is_inert() {
-    // a caller that forgot to register a knob gets no correction instead of a
+    // a knob that was never registered gets no correction instead of a
     // panic or an accidental learning rate
     let mut a = Adapt::new();
     a.add("known", -1.0, 1.0, 1.0);
@@ -101,9 +100,9 @@ fn a_frozen_parameter_still_reports() {
     assert_eq!(a.params[i].samples, 100);
     // the running mean is exactly 0.3 from the first sample, so the absolute value holds
     assert!((a.params[i].mean_err - 0.3).abs() < 1e-12);
-    // the readout is pinned whole — the numbers a caller reads off it stay visible in the suite —
-    // and byte for byte whatever the shortest round-tripping rendering of these values gives (rate 0.0
-    // is where a `%.3g`-style rendering and the shortest form agree)
+    // the readout is pinned whole — the numbers it reports stay visible in the suite — and byte for
+    // byte whatever the shortest round-tripping rendering of these values gives (rate 0.0 is where a
+    // `%.3g`-style rendering and the shortest form agree)
     assert_eq!(
         a.report()[0],
         "frozen: trim=0.0000 in [-1.000 1.000] rate=0 err=0.3000 mean=0.3000 n=100"
@@ -201,9 +200,9 @@ fn the_trace_is_bounded_and_its_depth_degrades_to_now() {
 ///
 /// `LeadTrim` is the smallest thing that is a learned inverse model: a trim on a reference's own
 /// lead (its velocity and acceleration terms), driven by the movement's along-track error. What this
-/// pins is the arithmetic, for the machine that later has a gap for it to close: the scale is exactly
-/// 1 at a zero trim (the behaviour with no learning in it, bit for bit), the trim integrates the error
-/// the caller hands in, it is bounded on both sides, and a frozen one stays where it is.
+/// pins is the arithmetic: the scale is exactly 1 at a zero trim (the behaviour with no learning in
+/// it, bit for bit), the trim integrates the error handed in, it is bounded on both sides, and a
+/// frozen one stays where it is.
 #[test]
 fn the_lead_trim_integrates_the_along_track_error_and_is_bounded() {
     // (1) A ZERO TRIM LEAVES THE LEAD UNCHANGED: scale 1.0 exactly, whatever the rate
@@ -213,7 +212,7 @@ fn the_lead_trim_integrates_the_along_track_error_and_is_bounded() {
         assert_eq!(lt.ada.trim("lead"), 0.0);
     }
     // (2) A PERSISTENT "BEHIND ITS REFERENCE" ERROR RAISES THE SCALE, which is the orientation
-    // contract the caller owes this layer
+    // contract this calibration requires
     let mut lt = LeadTrim::new(2.0, 1.0);
     let mut last = 1.0;
     for _ in 0..2000 {
@@ -251,7 +250,7 @@ fn the_lead_trim_integrates_the_along_track_error_and_is_bounded() {
 /// THE SAMPLING DISCIPLINE IS AUDITED: a channel is fed once per ITS OWN event with that event's
 /// interval, and both mistakes a per-step channel invites show up in the span stream — `dt = 0` counts
 /// samples and learns nothing, the tick period where the error arrives once per step under-learns.
-/// The audit refuses nothing (the layer stays arithmetic); it makes the mistake readable.
+/// The audit refuses nothing (the calibration stays arithmetic); it makes the mistake readable.
 #[test]
 fn the_sampling_discipline_is_audited() {
     let mut a = Adapt::new();
@@ -284,13 +283,12 @@ fn the_sampling_discipline_is_audited() {
     assert!(!a.report()[0].contains("suspect"));
 }
 
-/// THE CONVERGENCE THE LAYER'S OWN TIMING STRUCTURE EXISTS FOR: an error delivered N samples late
+/// THE CONVERGENCE THIS TIMING STRUCTURE EXISTS FOR: an error delivered N samples late
 /// must still converge, for a STATED range of N, to the same value it reaches with no delay.
 ///
-/// The plant is the file's opening `converge` one with the delay where the machine's own chain has
-/// it: the error at sample k is `e0 - c * g`, `g` being the trim the plant was DRIVEN with N samples
-/// earlier. N = 1..=8 brackets the one-step chains a per-step channel is reached through. No output:
-/// the numbers are the assertions.
+/// The model is the file's opening `converge` one, with the delay where it actually arises: the error
+/// at sample k is `e0 - c * g`, `g` being the trim DRIVEN N samples earlier. N = 1..=8 brackets the
+/// one-step delays a per-step channel is reached through. No output: the numbers are the assertions.
 #[test]
 fn the_aged_credit_converges_over_a_stated_range_of_delays() {
     let (e0, c) = (0.4, 2.0);
@@ -298,8 +296,8 @@ fn the_aged_credit_converges_over_a_stated_range_of_delays() {
     let dt = 0.35; // a per-step channel's own sample: one SAMPLE per step, 0.35 s each
     const STEPS: usize = 400;
     for n in 1..=8usize {
-        // the aged channel: each error is the outcome of the trim the plant drove with n samples ago,
-        // and `learn_at` credits it to exactly that value
+        // the aged channel: each error is the outcome of the trim driven n samples ago, and
+        // `learn_at` credits it to exactly that value
         let mut aged = Adapt::new();
         aged.add("g", -10.0, 10.0, 0.1);
         let mut g: Vec<f64> = vec![0.0];
@@ -309,7 +307,7 @@ fn the_aged_credit_converges_over_a_stated_range_of_delays() {
             let err = e0 - c * drove;
             g.push(aged.learn_at("g", err, n as f64 * dt, dt));
         }
-        // the immediate rule on the SAME delayed plant: the same errors, credited to the value now
+        // the immediate rule on the SAME delayed model: the same errors, credited to the value now
         let mut now = Adapt::new();
         now.add("g", -10.0, 10.0, 0.1);
         let mut h: Vec<f64> = vec![0.0];

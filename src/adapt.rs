@@ -1,36 +1,29 @@
-// adapt.rs — a layer's error-driven calibration: a per-parameter trim (its limits, its rate, the
-// evidence it has accumulated, and the trace of its own recent values) over errors the caller
-// measures. It holds no model of the plant: the caller computes and orients every error so that
-// RAISING the trim reduces it.
+// adapt.rs — why the sign is not decided here: it cannot know which way a parameter's error responds,
+// and guessing one would build in a machine's convention. So an error arrives already oriented —
+// raising the trim must reduce it — and this is arithmetic over numbers handed in.
 
-/// AdaptParam is one tuned quantity: its trim, its limits, its rate, and the evidence of whether it
-/// is still learning.
+/// AdaptParam is one tuned quantity and the evidence it has accumulated.
 #[derive(Clone, Debug)]
 pub struct AdaptParam {
     pub name: String,
-    /// the trim the caller adds to its parameter's nominal value
     pub trim: f64,
-    /// the trim's own limits: a calibration must not walk a gain into a regime never tested
+    /// Why the limits exist: a calibration must not walk a gain into a regime never tested.
     pub lo: f64,
     pub hi: f64,
-    /// learning rate [1/s]: the trim moves by rate * err * dt
     pub rate: f64,
-    /// the last error seen and the mean over the trim's life, so a caller can tell "still learning"
-    /// from "converged to a bias"
+    /// Why the running mean is kept: with the last error it separates still-learning from
+    /// converged-to-a-bias.
     pub last_err: f64,
     pub mean_err: f64,
     pub samples: usize,
-    /// the eligibility trace: this parameter's own recent values, newest LAST, one entry per `learn`
-    /// call and the value it held BEFORE that call's update — what makes a DELAYED error attachable
-    /// to the value that caused it (see `learn_at`)
+    /// Why the trace holds the value from BEFORE the update: that is what makes a delayed error
+    /// attachable to the value that caused it (see `learn_at`).
     pub trace: Vec<f64>,
-    /// the sampling discipline, audited: the span of the last sample the channel was handed [s], its
-    /// mean, and how many samples arrived far below that mean. A channel is fed once per ITS OWN
-    /// event with that event's interval; the audit refuses no sample, it makes the mistake readable
+    /// Why the spans are audited at all: a channel is fed once per its own event, and feeding it at
+    /// the wrong period is a mistake that is otherwise silent. The audit refuses no sample; it makes
+    /// the mistake readable.
     pub last_span: f64,
     pub mean_span: f64,
-    /// samples whose span was non-positive, non-finite, or below a quarter of this channel's own
-    /// running mean (< `SUSPECT_FRAC`), counted after the mean has `SUSPECT_WARMUP` samples behind it
     pub suspect: usize,
 }
 
@@ -42,24 +35,20 @@ pub const SUSPECT_FRAC: f64 = 0.25;
 /// first samples ARE the mean, so a channel's opening samples cannot be judged against it.
 pub const SUSPECT_WARMUP: usize = 4;
 
-/// TRACE is how many of a parameter's own past values are kept: one per `learn` call, newest last, a
-/// bounded ring rather than a log. Counted in samples and not seconds, so the same 64 is a different
-/// horizon per channel — a channel fed once per step holds far more time than one fed once per tick —
-/// and the depth covers one step's delay.
+/// TRACE is how many of a parameter's own past values are kept. Why a bounded ring in samples and
+/// not a log in seconds: the same 64 is a different horizon per channel, and the depth only has to
+/// cover one step's delay.
 pub const TRACE: usize = 64;
 
-/// Adapt holds the layer's parameters: pure arithmetic over errors the caller
-/// measures, reading no plant, a clock, or a model.
+/// Adapt is pure arithmetic over numbers handed in: it reads no plant, no clock and no model, which
+/// is what lets it be shared without being owned.
 #[derive(Clone, Debug)]
 pub struct Adapt {
     pub params: Vec<AdaptParam>,
-    /// total error samples taken, for the caller's readout
     pub steps: usize,
 }
 
 impl Adapt {
-    /// new builds an empty layer. Parameters are added by name, so a caller states what it is
-    /// calibrating.
     pub fn new() -> Adapt {
         Adapt {
             params: Vec::new(),
@@ -67,8 +56,8 @@ impl Adapt {
         }
     }
 
-    /// add registers a parameter. A non-positive rate leaves it frozen at its initial trim, which is
-    /// how a caller keeps a knob recorded but untuned.
+    /// Why a non-positive rate is accepted rather than rejected: it keeps a parameter recorded but
+    /// untuned, frozen at its initial trim.
     pub fn add(&mut self, name: &str, lo: f64, hi: f64, rate: f64) {
         self.params.push(AdaptParam {
             name: name.to_string(),
@@ -86,15 +75,14 @@ impl Adapt {
         });
     }
 
-    /// set_rate changes a registered parameter's rate — how a caller freezes a LIVE channel for an A/B
-    /// without un-registering it (rate 0 keeps the correction earned so far); unknown names are no-ops.
+    /// Why a rate can be changed on a live parameter: freezing one for an A/B must keep the
+    /// correction already earned and must not require un-registering it. Unknown names are no-ops.
     pub fn set_rate(&mut self, name: &str, rate: f64) {
         if let Some(i) = self.index(name) {
             self.params[i].rate = if rate > 0.0 { rate } else { 0.0 };
         }
     }
 
-    /// index finds a parameter's slot, or none.
     pub fn index(&self, name: &str) -> Option<usize> {
         for (i, p) in self.params.iter().enumerate() {
             if p.name == name {
@@ -104,8 +92,8 @@ impl Adapt {
         None
     }
 
-    /// trim reads a parameter's current trim (0 for an unknown name, so a caller
-    /// that forgets to register a knob gets "no correction" rather than a panic).
+    /// Why an unknown name answers 0 rather than panicking: a knob that was never registered means
+    /// no correction, not a crash.
     pub fn trim(&self, name: &str) -> f64 {
         let Some(i) = self.index(name) else {
             return 0.0;
@@ -113,9 +101,8 @@ impl Adapt {
         self.params[i].trim
     }
 
-    /// learn feeds one error sample to a parameter and returns the trim to use: the integral of the
-    /// error, clamped. The caller orients the error (RAISING the trim must reduce it); this layer
-    /// cannot know that sign, and guessing it would build in a per-robot convention.
+    /// Why the error must arrive oriented (raising the trim must reduce it): the sign is not
+    /// knowable here, and guessing it would build in a machine's convention.
     pub fn learn(&mut self, name: &str, err: f64, dt: f64) -> f64 {
         let Some(i) = self.index(name) else {
             return 0.0;
@@ -155,11 +142,10 @@ impl Adapt {
         p.trim
     }
 
-    /// learn_at is `learn` for an error that arrived late: `age` [s] counts in units of the caller's
-    /// own `dt`, the interval between the `learn` calls THIS parameter gets (not the tick, when its
-    /// error arrives once per step). The credit is computed against the trim the parameter HAD `age`
-    /// seconds ago — the value that caused the error — and only the DELTA is carried to today's value,
-    /// so an age inside one sample IS `learn` to the digit; it is not a second gain or a slower rate.
+    /// Why the credit is computed at the OLD value and only the delta carried forward: the error was
+    /// caused by the value the parameter had, not the one it has now. `age` counts in units of this
+    /// parameter's own `dt`, the interval between the `learn` calls THIS parameter gets. An age
+    /// inside one sample is therefore `learn` to the digit — not a second gain, not a slower rate.
     pub fn learn_at(&mut self, name: &str, err: f64, age: f64, dt: f64) -> f64 {
         let Some(i) = self.index(name) else {
             return 0.0;
@@ -174,7 +160,6 @@ impl Adapt {
         } else {
             0
         };
-        // the value LIVE `back` samples ago: `back` 0 is the value now, one back the trace's newest entry
         let then = if back == 0 {
             p.trim
         } else {
@@ -210,12 +195,8 @@ impl Adapt {
         p.trim
     }
 
-    /// report is the layer's state as one line per parameter: the trim, its bounds, the rate and the
-    /// error evidence. The rate prints in its shortest round-tripping form rather than through `g`,
-    /// which renders a live 1e-4 as "0" — the text of a frozen knob.
-    /// span_report is the sampling discipline's readout: per channel, the span of its last sample, its
-    /// mean span and how many samples arrived far below that mean (a second line, because `report`'s
-    /// text is pinned byte for byte by `tests/adapt.rs`).
+    /// Why a second readout exists instead of a wider `report`: `report`'s text is pinned byte for
+    /// byte by the suite, so the sampling discipline gets its own line.
     pub fn span_report(&self) -> Vec<String> {
         self.params
             .iter()
@@ -228,6 +209,8 @@ impl Adapt {
             .collect()
     }
 
+    /// Why the rate is rendered in its shortest round-tripping form rather than through `g`: `g`
+    /// renders a live 1e-4 as "0", the text of a frozen knob.
     pub fn report(&self) -> Vec<String> {
         let mut out = Vec::with_capacity(self.params.len());
         for p in &self.params {
@@ -239,44 +222,39 @@ impl Adapt {
         out
     }
 }
-/// LeadTrim is a learned feedforward over a reference's own lead: a trim on the lead's velocity and
-/// acceleration terms, learned from the along-track error of a repeated movement. Only the SCALE is
-/// learned, not the shape (the caller puts the shape through the plant's J+) — a badly learned scale is
-/// a worse lead. The caller orients the error: `err_along > 0` must mean "behind its reference", so
-/// raising the trim reduces it.
+/// LeadTrim is a learned feedforward over a reference's own lead. Why only the SCALE is learned and
+/// never the shape: the shape is geometry, and a badly learned scale is a worse lead where a badly
+/// learned shape would be a wrong direction. The error must arrive oriented — `err_along > 0` means
+/// behind its reference — for the same reason `Adapt` requires it.
 #[derive(Clone, Debug)]
 pub struct LeadTrim {
-    /// the underlying parameter: one trim, its limits and its rate, held by `Adapt`
     pub ada: Adapt,
-    /// the trim's own cap on the SCALE, i.e. the largest multiplier the lead may carry (a learner that
-    /// can double a reference's velocity must be a decision, not an accident)
+    /// Why the scale is capped besides the trim's own limits: a learner able to double a reference's
+    /// velocity must be a decision, not an accident.
     pub max: f64,
 }
 
 impl LeadTrim {
-    /// new registers the one parameter. `rate` is in the same units as every other rate here
-    /// (`trim += rate * err * dt`), and `max` bounds BOTH directions symmetrically.
+    /// Why `max` bounds both directions symmetrically: the trim's limits are one interval, not two.
     pub fn new(rate: f64, max: f64) -> LeadTrim {
         let mut ada = Adapt::new();
         ada.add("lead", -max, max, rate);
         LeadTrim { ada, max }
     }
 
-    /// observe feeds one sample of the movement's own along-track error and answers the trim.
     pub fn observe(&mut self, err_along: f64, dt: f64) -> f64 {
         self.ada.learn("lead", err_along, dt)
     }
 
-    /// observe_at is `observe` for a sample that arrived late: the error read at one step is the
-    /// outcome of the placement the PREVIOUS step's trim set, so `age` [s] counts in this channel's
-    /// own `dt` (one sample per step) — `Adapt::learn_at`'s rule exactly.
+    /// Why an error can arrive late: the one read at a step is the outcome of the placement the
+    /// PREVIOUS step's trim set, so `age` counts in this channel's own `dt` — `Adapt::learn_at`'s
+    /// rule exactly.
     pub fn observe_at(&mut self, err_along: f64, dt: f64, age: f64) -> f64 {
         self.ada.learn_at("lead", err_along, age, dt)
     }
 
-    /// scale is the multiplier a caller applies to the reference's lead terms: 1.0 with the trim at
-    /// zero — the behaviour with no learning in it, bit for bit, which is what makes a caller's A/B
-    /// against a frozen channel a comparison of the LEARNING rather than of the wiring.
+    /// Why 1.0 at a zero trim matters: that is the behaviour with no learning in it, bit for bit, so
+    /// an A/B against a frozen channel compares the learning and not the wiring.
     pub fn scale(&self) -> f64 {
         1.0 + self.ada.trim("lead")
     }

@@ -45,8 +45,8 @@ fn code_of(text: &str) -> String {
     out.join("\n")
 }
 
-/// The base imports the arithmetic crate and itself, and nothing else: a third name here is the
-/// layer this crate exists not to be.
+/// The base imports the arithmetic crate and itself, and nothing else: a third name here is the thing
+/// this crate exists not to be.
 #[test]
 fn every_import_is_control_math_or_our_own() {
     let files = sources();
@@ -60,8 +60,8 @@ fn every_import_is_control_math_or_our_own() {
             "lib.rs",
             "plant.rs"
         ],
-        "the module list moved: the base is the contract, the efference copy, the contact model the \
-         plants share (what a force does and where it comes from) and the calibration, and nothing else"
+        "the module list moved: the base is the contract, the efference copy, the contact model \
+         (what a force does and where it comes from) and the calibration, and nothing else"
     );
     for (name, text) in &files {
         for line in code_of(text).lines() {

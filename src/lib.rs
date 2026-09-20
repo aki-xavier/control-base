@@ -1,42 +1,21 @@
-// control-base — the control stack's product-neutral base, as a project of its own.
+// control-base — the control stack's product-neutral base. Why it is a crate of its own: a contract
+// stated beside an implementation is one that implementation can reach into, and a value type held
+// by more than one party cannot live under any one of them. So it is defined by what it may name —
+// its own types, and the arithmetic crate below it — and its five modules are the whole of it.
 //
-// FIVE MODULES AND NOTHING ELSE:
-//   adapt              a layer's error-driven calibration: a per-parameter trim with its limits, its
-//                      rate, the evidence it has accumulated and the trace of its recent values, over
-//                      errors the CALLER measures and orients. It holds no model of the plant and
-//                      imports nothing at all; it is here because more than one user keeps the same
-//                      trim, and a value type shared by more than one user may not live under any
-//                      one of them.
-//   plant              the Plant contract a controller programs against: the machine's STRUCTURE
-//                      as data (PlantStructure — DOF, which coordinates are driven, how many
-//                      leading ones are the base pose, the distal contacts and what each can
-//                      supply, the bodies, the declared task frame), the numeric core, and the
-//                      task mapping addressed BY NAME. It is where it is because the contract's
-//                      POINT is that the dynamics backend can be swapped without the control law
-//                      changing, so the file cannot live beside an implementation.
-//   efference          the copy of what a layer COMMANDED against what its sensor read, and their
-//                      difference — `measured = commanded + residual`, the split a contact detector
-//                      wants. Dependency-free: it imports nothing at all.
-//   contact_law        where a plant's contact force COMES FROM, as a strategy: the world's report
-//                      taken at its word, this side's own geometric penalty, the two raised together,
-//                      or a complementarity solve of the non-penetration condition against the
-//                      machine's own dynamics. Arithmetic on numbers a plant READ — from an engine,
-//                      or from a model of its own — and the seam that lets the two be swapped without
-//                      the plant changing.
-//   contact_injection  what a decided force DOES: low-pass the wrench, gate the non-touching slots,
-//                      clamp each slot, add the contact-point dashpot, and push the sum through that
-//                      point's J^T. It names no engine, and it states once what a copy gets wrong
-//                      quietly (the gate, the clamp-before-dashpot order, the dashpot's sign).
+//   plant              the contract; separate, because a contract beside an implementation is one
+//                      that implementation can reach into
+//   efference          the commanded/measured split; separate, because it reads no plant
+//   contact_injection  what a decided contact force does; where a second copy gets the gate, the
+//                      clamp-before-dashpot order and the dashpot's sign wrong
+//   contact_law        where a contact force comes from; the seam that lets the source be swapped
+//                      without the rest changing
+//   adapt              error-driven calibration; it reads no plant, so it cannot be owned by
+//                      anything that reads one
 //
-// THE CHARTER, which is what keeps this crate thin: zero-dependency value types, and the interfaces
-// that state a boundary. It names no engine, no model and no layer, and its dependency set is
-// exactly `{ control-math }`.
-//
-// WHY IT IS A PROJECT OF ITS OWN: a user of this crate is a controller, a law or a runtime, and the
-// two rules point the same way — a contract may not be stated beside an implementation, and a value
-// type shared by more than one user may not live under any one of them. Were the contract stated
-// inside one, every other would have to depend on it. So this crate is defined by what it is allowed
-// to name — its own types, and the arithmetic crate below it — and not by who consumes it.
+// THE CHARTER, which keeps the crate thin: zero-dependency value types, and the interfaces that state
+// a boundary. The dependency set is exactly `{ control-math }`, and `tests/charter.rs` is what makes
+// that a check rather than a promise.
 
 pub mod adapt;
 pub mod contact_injection;

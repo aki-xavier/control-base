@@ -1,7 +1,5 @@
-// contact_law.rs — the laws' own arithmetic, as checks: what each law commands and where it is silent,
-// what it does with a report and a geometry that disagree, and what the complementarity solve does to a
-// system whose answer is known by hand. A plant's own suite pins the NUMBERS it produces under a law;
-// this one pins the laws.
+// contact_law.rs — the laws' arithmetic is pinned here: each is checked where it is silent as well as
+// where it commands, and the solve against a system whose answer is known by hand.
 
 use control_base::contact_injection::ContactInjection;
 use control_base::contact_law::{
@@ -10,9 +8,8 @@ use control_base::contact_law::{
 };
 use control_math::mat::Mat;
 
-/// slot is one slot with the numbers a plant hands over: the injection (this slot's own, already shared
-/// out over the set), the world's report and gate, the penetration of each point, this side's stiffness
-/// and whether the set is this side's own.
+/// slot is one slot with the numbers a law is handed, so a test can state both sides of a
+/// disagreement.
 fn slot<'a>(
     inj: &'a ContactInjection,
     report: [f64; 3],
@@ -31,9 +28,8 @@ fn slot<'a>(
     }
 }
 
-/// The report law is the world's word: the readout for the slot, shared over the set, clamped to what
-/// the slot may command. It is the scheme for a rigid contact, and the clamp is where a readout becomes
-/// a force.
+/// Why the report law is the world's word: an open slot's readout IS the force, so the clamp is the
+/// only thing left to apply.
 #[test]
 fn the_report_law_takes_the_world_at_its_word() {
     let inj = ContactInjection::new(0.0, 300.0, 150.0, 0.0);
@@ -71,21 +67,18 @@ fn the_report_law_takes_the_world_at_its_word() {
         assert_eq!(*f, [0.0, 0.0, 20.0]);
     }
 
-    // a slot the world does not report is left alone, and the caller's buffer is cleared rather than
-    // holding the last slot's forces
+    // a slot the world does not report is left alone, and the buffer is cleared rather than holding
+    // the last slot's forces
     out.push([1.0, 1.0, 1.0]);
     assert!(!law.decide_into(
         &slot(&inj, [0.0, 0.0, 0.0], false, &[0.0], 0.0, false),
         &mut out
     ));
-    assert!(
-        out.is_empty(),
-        "a silent slot left {out:?} in the caller's buffer"
-    );
+    assert!(out.is_empty(), "a silent slot left {out:?} in the buffer");
 }
 
-/// The penalty law is this side's geometry alone: `k * pen / n` at each point, the report ignored
-/// entirely, and a slot silent only when its own geometry says nothing.
+/// Why a report cannot move the penalty law: it reads geometry alone, so a slot is silent only when
+/// its own geometry says nothing.
 #[test]
 fn the_penalty_law_is_its_own_geometry_only() {
     let inj = ContactInjection::new(0.0, 600.0, 0.0, 0.05);
@@ -167,8 +160,8 @@ fn the_floored_law_raises_the_report_to_the_geometry() {
         &mut out
     ));
 
-    // the clamp is NOT applied to this law's forces — the documented difference from the report law. A
-    // readout of 4000 N over two points is 2000 N each, well past the slot's 600 N bound.
+    // the clamp is NOT applied to this law's forces — the difference from the report law. A readout of
+    // 4000 N over two points is 2000 N each, well past the slot's 600 N bound.
     assert!(law.decide_into(
         &slot(
             &inj,
@@ -183,9 +176,10 @@ fn the_floored_law_raises_the_report_to_the_geometry() {
     assert_eq!(out, vec![[0.0, 0.0, 2000.0], [0.0, 0.0, 2000.0]]);
 }
 
-/// The solve is a statement about the machine's own system, so its answer is checked against one whose
-/// answer is arithmetic: a unit mass moving down at 0.5 m/s, stopped AT the plane by the impulse the
-/// constraint requires, and a patch that must pick which of its points carries the load.
+/// Why the solve is checked against arithmetic: a multiplier is only defined against the system it
+/// acts on, so the system is kept small enough that its answer is known by hand — a unit mass moving
+/// down at 0.5 m/s, stopped AT the plane by the impulse the constraint requires, and a patch that must
+/// pick which of its points carries the load.
 #[test]
 fn the_solve_stops_a_landing_at_the_plane() {
     let law = SolveContact::default();
@@ -257,9 +251,9 @@ fn the_solve_stops_a_landing_at_the_plane() {
     assert_eq!(lam[0], 0.0);
 }
 
-/// One patch, one rigid body, two points: the coupling that makes a solved contact a solve rather than
-/// two independent springs — and the deterministic tie-break the projection has, which is what makes a
-/// machine's pressure point reproducible.
+/// One patch, one rigid body, two points: why the solve is a solve rather than two independent
+/// springs is the coupling through the mass matrix — and why a pressure point is reproducible is the
+/// deterministic tie-break the projection has.
 #[test]
 fn a_solved_patch_shares_its_load_through_the_machine() {
     let law = SolveContact::default();

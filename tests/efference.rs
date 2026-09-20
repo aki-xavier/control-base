@@ -1,13 +1,13 @@
-// efference.rs — a layer's command against its sensor read, and the difference between them:
-// engine-free, and unconditional: whatever gate there is belongs to the caller.
+// efference.rs — the command against the sensor read, and the difference between them: engine-free,
+// and unconditional — whatever gate there is belongs elsewhere.
 
 use control_base::efference::Efference;
 
 #[test]
 fn the_residual_is_the_reading_the_machine_did_not_do_itself() {
     let mut e = Efference::new();
-    // commanded == read cancels to zero, which no contact detector may fire on; what the world adds
-    // is the residual, and the share is that over the reading
+    // commanded == read cancels to zero, so nothing may fire on it; what the world adds is the
+    // residual, and the share is that over the reading
     let r = e.observe(&[163.0, 163.0], &[163.0, 163.0]);
     assert_eq!(r, 0.0);
     assert_eq!(e.residual(0), 0.0);

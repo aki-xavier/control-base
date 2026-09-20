@@ -1,24 +1,17 @@
-// efference.rs — Efference, the copy of what a layer COMMANDED: a sensory reading is the world's
-// part plus the machine's own, so the copy splits it into `measured = commanded (my own doing) +
-// residual (the world's)`, which is what a contact detector wants. It reads no plant and holds no
-// model; it is not a filter, so a command DELAYED relative to its reading subtracts the wrong thing —
-// the caller states what it commanded this tick.
+// efference.rs — why the comparison is unconditional and why the command must be this tick's: the
+// split `measured = commanded + residual` is meaningful only for one instant, so a command delayed
+// against its reading subtracts the wrong thing. Gating is a policy, not arithmetic.
 
-/// Efference is what a layer commanded against what its sensors read, and the difference. The
-/// comparison is unconditional — any gating belongs at the use, not here — and one instance holds one
-/// channel per thing commanded: a joint torque, a contact force, whatever the caller's channels are.
+/// Efference holds the commanded/measured pair and their difference. The comparison is
+/// unconditional: which readings matter is a question the arithmetic cannot answer.
 #[derive(Clone, Debug, Default)]
 pub struct Efference {
-    /// what the layer commanded, one entry per channel, in that channel's own unit
     pub commanded: Vec<f64>,
-    /// what the sensor read back, same channels and unit — a plant's own step or a load cell, the
-    /// caller's choice
     pub measured: Vec<f64>,
-    /// `measured - commanded`: the part of the reading that is NOT the machine's own doing
+    /// `measured - commanded`: the part of the reading that is NOT the machine's own doing.
     pub residual: Vec<f64>,
-    /// how many comparisons have been taken
     pub samples: usize,
-    /// the channels' unit, as `report` prints it — empty means the default label
+    /// Why empty is allowed: it prints as the default label.
     pub unit: String,
 }
 
@@ -27,9 +20,7 @@ impl Efference {
         Efference::default()
     }
 
-    /// observe takes one tick's pair for the whole channel set and answers the total absolute
-    /// residual in the channels' own unit. It resizes to the caller's channel count on the first
-    /// call, so a machine with a different number of channels needs no configuration.
+    /// Why it resizes rather than being configured: the channel count is data, not configuration.
     pub fn observe(&mut self, commanded: &[f64], measured: &[f64]) -> f64 {
         let n = commanded.len().min(measured.len());
         if self.commanded.len() != n {
@@ -48,8 +39,8 @@ impl Efference {
         total
     }
 
-    /// residual is one channel's difference, in that channel's own unit: positive means the sensor
-    /// read MORE than the machine was doing, i.e. the world supplied some of it.
+    /// Positive means the reading was MORE than the machine was doing, i.e. the world supplied some
+    /// of it.
     pub fn residual(&self, i: usize) -> f64 {
         if i < self.residual.len() {
             self.residual[i]
@@ -58,9 +49,8 @@ impl Efference {
         }
     }
 
-    /// external_share is that residual as a share of what was measured: 1.0 when the machine is
-    /// doing nothing, 0.0 when the whole reading is its own doing. A `measured` near zero (and so a
-    /// 0/0) is answered as 0.0 rather than a panic.
+    /// Why a near-zero `measured` answers 0.0: the share would be a 0/0, and a division by zero is
+    /// not a reading.
     pub fn external_share(&self, i: usize) -> f64 {
         if i < self.measured.len() && self.measured[i].abs() > 1e-9 {
             self.residual[i] / self.measured[i]
@@ -69,8 +59,6 @@ impl Efference {
         }
     }
 
-    /// report is the layer's state as one line, labelled with `unit` (empty, the default, prints the
-    /// default label `N`), for the caller's readout.
     pub fn report(&self) -> String {
         let unit = if self.unit.is_empty() {
             "N"

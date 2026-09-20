@@ -22,7 +22,7 @@ fn tip() -> TaskMap {
 #[test]
 fn a_welded_chain_declares_itself_braced_by_construction() {
     let s = PlantStructure::fixed_base(3, bodies(), tip());
-    assert_eq!(s.dof, 3, "the arm's DOF is its joints");
+    assert_eq!(s.dof, 3, "the DOF is its joints");
     assert_eq!(s.base_dof, 0, "a welded base is not a state");
     assert!(s.all_driven(), "every joint of a serial arm is driven");
     assert!(!s.base_is_a_state());
@@ -49,8 +49,8 @@ fn a_welded_chain_declares_itself_braced_by_construction() {
 
 #[test]
 fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
-    // 6 base coordinates + 3 joints: the base floats and the joints are the driven ones, which is
-    // the shape a humanoid is and the shape the old contract could not state at all.
+    // 6 base coordinates + 3 joints: the base floats and the joints are the driven ones, the shape
+    // the old contract could not state at all.
     let mut s = PlantStructure {
         dof: 9,
         actuated: vec![false, false, false, false, false, false, true, true, true],
@@ -86,9 +86,9 @@ fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
     assert!(s.braced(), "a welded distal contact is a brace");
 }
 
-/// A task that is a POINT has no rotation, and the structure is where that is said. The centre of mass
-/// is the case this exists for: a mass-weighted quantity of the whole configuration, on no link, so it
-/// cannot be addressed as a frame and cannot be asked for an orientation.
+/// A task that is a POINT has no rotation, and the structure is where that is said. Why the centre of
+/// mass is the case this exists for: it is a mass-weighted quantity of the whole configuration, on no
+/// link, so it cannot be addressed as a frame and cannot be asked for an orientation.
 #[test]
 fn a_task_may_be_a_point_and_then_it_has_no_rotation_to_report() {
     let mut s = PlantStructure {
