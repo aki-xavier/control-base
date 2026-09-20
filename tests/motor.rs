@@ -1,0 +1,235 @@
+// motor.rs — the contract's poses as ONE element, as a check rather than a promise.
+//
+// The contract reports a pose as (position, rotation). A caller that reads geometry through the algebra
+// wants that pose as a single multiplicative element, and `frame_motor` / `task_motor` are where it gets
+// one. Why this is checked HERE and not only where it is used: it is a statement of the CONTRACT, and a
+// conversion kept at the base is one copy of the convention for every crate above it.
+//
+// What the checks hold: the rotor's action is the rotation the contract's quaternion means, the motor's
+// action is `T(p) R` and not `R T(p)`, the defaults really are the pose accessors read through the
+// conversion, a point task's motor carries the same identity convention `task_pose` does, and two
+// motors compose by ONE product — which is the whole reason for the type.
+
+use control_base::plant::{motor_of_pose, rotor_of_quat, Plant, PlantStructure, TaskMap};
+use control_math::mat::Mat;
+use control_math::quat::Quat;
+use control_math::vec3::Vec3;
+use pga::Multivector;
+
+/// The tip's pose: a position off every axis and a quarter turn about z, so a dropped or a conjugated
+/// rotation moves the answer.
+fn tip_pos() -> Vec3 {
+    Vec3::new(0.3, -0.2, 0.5)
+}
+
+fn tip_rot() -> Quat {
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    Quat {
+        w: h,
+        x: 0.0,
+        y: 0.0,
+        z: h,
+    }
+}
+
+/// probe is the smallest machine whose pose is not the identity: one joint, a tip frame one unit along
+/// its own x, and — when it is asked for one — a point at its centre of mass.
+struct Probe {
+    map: TaskMap,
+}
+
+fn probe(map: TaskMap) -> Probe {
+    Probe { map }
+}
+
+impl Plant for Probe {
+    fn structure(&self) -> PlantStructure {
+        let points = match self.map {
+            TaskMap::Point(_) => vec!["com".to_string()],
+            TaskMap::Frame(_) => Vec::new(),
+        };
+        PlantStructure {
+            dof: 1,
+            actuated: vec![true],
+            base_dof: 0,
+            contacts: Vec::new(),
+            bodies: vec!["l1".to_string()],
+            points,
+            task_map: self.map.clone(),
+        }
+    }
+
+    fn joint_positions(&mut self) -> Vec<f64> {
+        vec![0.0]
+    }
+
+    fn joint_velocities(&mut self) -> Vec<f64> {
+        vec![0.0]
+    }
+
+    fn mass_matrix(&mut self) -> Mat {
+        Mat::eye_scaled(1.0, 1)
+    }
+
+    fn bias_torques(&mut self) -> Vec<f64> {
+        vec![0.0]
+    }
+
+    fn gravity_torques(&mut self) -> Vec<f64> {
+        vec![0.0]
+    }
+
+    fn frame_pose(&mut self, name: &str) -> (Vec3, Quat) {
+        assert_eq!(name, "tip", "this machine has one frame");
+        (tip_pos(), tip_rot())
+    }
+
+    fn frame_jacobian(&mut self, _name: &str) -> Mat {
+        Mat::zeros(3, 1)
+    }
+
+    fn frame_full_jacobian(&mut self, _name: &str) -> Mat {
+        Mat::zeros(6, 1)
+    }
+
+    fn point_position(&mut self, name: &str) -> Vec3 {
+        assert_eq!(name, "com", "this machine has one point");
+        Vec3::new(0.1, 0.0, 0.2)
+    }
+
+    fn point_jacobian(&mut self, _name: &str) -> Mat {
+        Mat::zeros(3, 1)
+    }
+
+    fn body_frame(&mut self, _name: &str) -> (Vec3, Mat) {
+        (Vec3::ZERO, Mat::eye_scaled(1.0, 3))
+    }
+
+    fn body_jacobian(&mut self, _name: &str) -> Mat {
+        Mat::zeros(3, 1)
+    }
+}
+
+/// the action of a motor on a point: `M X M~`, read back in coordinates.
+fn act(m: Multivector, x: Vec3) -> Vec3 {
+    let c = m.gp(pga::point(x.x, x.y, x.z)).gp(m.reverse()).coords();
+    Vec3::new(c[0], c[1], c[2])
+}
+
+fn close(a: Vec3, b: Vec3) -> bool {
+    a.sub(b).norm() < 1e-12
+}
+
+/// The rotor's action is the rotation the contract's quaternion means — not its inverse, and not the
+/// transpose of its matrix.
+#[test]
+fn the_rotor_acts_as_the_contracts_quaternion_does() {
+    let r = rotor_of_quat(tip_rot());
+    assert!(
+        (r.norm() - 1.0).abs() < 1e-12,
+        "a rotor from a unit quaternion is unit: {}",
+        r.norm()
+    );
+    for v in [
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.1, -0.7, 0.3),
+    ] {
+        let by_rotor = act(r, v);
+        let by_matrix = tip_rot().to_mat3().mul_vec3(v);
+        assert!(
+            close(by_rotor, by_matrix),
+            "the rotor sent {v:?} to {by_rotor:?} where the quaternion's own matrix says {by_matrix:?}"
+        );
+    }
+}
+
+/// The motor's action is `T(p) R` — rotate first, then translate — which is the composition order the
+/// model's `PgaFk` and `Kinematics` are written against. A `R T(p)` motor would put the tip in a
+/// different place and would only agree at the origin.
+#[test]
+fn the_motor_rotates_then_translates() {
+    let m = motor_of_pose(tip_pos(), tip_rot());
+    assert!(
+        close(act(m, Vec3::ZERO), tip_pos()),
+        "the motor did not carry the origin to the pose's position"
+    );
+    let local = Vec3::new(1.0, 0.0, 0.0);
+    let want = tip_pos().add(tip_rot().to_mat3().mul_vec3(local));
+    assert!(
+        close(act(m, local), want),
+        "the motor took a local point to {:?} where T(p) R says {want:?}",
+        act(m, local)
+    );
+    // and the pair read the other way round would be a different motor, so the test is not vacuous
+    let other = rotor_of_quat(tip_rot()).gp(pga::translator(tip_pos().to_array()));
+    assert!(
+        !close(act(other, local), want),
+        "R T(p) and T(p) R agree here: this check would not notice the swap"
+    );
+}
+
+/// The trait's defaults are the pose accessors read through the one conversion — and the task motor is
+/// the same element the task's frame reports, not a second reading of it.
+#[test]
+fn the_defaults_are_the_pose_accessors_read_through_the_conversion() {
+    let mut p = probe(TaskMap::Frame("tip".to_string()));
+    let (pos, rot) = p.frame_pose("tip");
+    let want = motor_of_pose(pos, rot);
+    assert_eq!(
+        p.frame_motor("tip").to_matrix(),
+        want.to_matrix(),
+        "frame_motor is not motor_of_pose(frame_pose)"
+    );
+    assert_eq!(p.task_motor().to_matrix(), want.to_matrix());
+}
+
+/// A task that is a POINT has no rotation, so its motor carries the identity convention `task_pose`
+/// already stands in with — and `task_is_a_point()` is how a caller avoids reading it as one.
+#[test]
+fn a_point_tasks_motor_carries_the_convention_and_not_a_rotation() {
+    let mut p = probe(TaskMap::Point("com".to_string()));
+    assert!(p.structure().task_is_a_point());
+    let m = p.task_motor();
+    let want = motor_of_pose(p.point_position("com"), Quat::IDENTITY);
+    assert_eq!(
+        m.to_matrix(),
+        want.to_matrix(),
+        "a point task's motor is its position with no rotation, the same convention task_pose uses"
+    );
+    // the convention is visible as one: it does not turn the point's own axes
+    let local = Vec3::new(1.0, 0.0, 0.0);
+    assert!(close(act(m, local), p.point_position("com").add(local),));
+}
+
+/// Two motors compose by ONE product, which is what the type is for: `T(p1) R1` then `T(p2) R2` is
+/// `motor_of_pose(p1 + R1 p2, R1 R2)`, and the right-hand motor is the one that acts first.
+#[test]
+fn two_motors_compose_by_one_product_and_the_order_is_the_action() {
+    let (p1, q1) = (
+        Vec3::new(0.1, 0.0, 0.2),
+        Quat {
+            w: std::f64::consts::FRAC_1_SQRT_2,
+            x: std::f64::consts::FRAC_1_SQRT_2,
+            y: 0.0,
+            z: 0.0,
+        },
+    );
+    let (p2, q2) = (tip_pos(), tip_rot());
+    let seq = motor_of_pose(p1, q1).gp(motor_of_pose(p2, q2));
+    let x = Vec3::new(0.4, 0.3, -0.1);
+
+    // the action: the right-hand motor acts first
+    let by_seq = act(seq, x);
+    let by_steps = act(motor_of_pose(p1, q1), act(motor_of_pose(p2, q2), x));
+    assert!(
+        close(by_seq, by_steps),
+        "composing motors is not applying them in sequence: {by_seq:?} against {by_steps:?}"
+    );
+    // and the closed form: the translations add through the first rotation
+    let want = motor_of_pose(p1.add(q1.to_mat3().mul_vec3(p2)), q1.mul(q2));
+    assert!(
+        close(act(want, x), by_seq),
+        "the product is not the motor of (p1 + R1 p2, R1 R2)"
+    );
+}

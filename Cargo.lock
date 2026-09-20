@@ -7,6 +7,7 @@ name = "control-base"
 version = "0.1.0"
 dependencies = [
  "control-math",
+ "pga",
 ]
 
 [[package]]
@@ -15,6 +16,10 @@ version = "0.1.0"
 dependencies = [
  "rand_mt",
 ]
+
+[[package]]
+name = "pga"
+version = "0.1.0"
 
 [[package]]
 name = "rand_mt"

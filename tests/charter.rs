@@ -2,8 +2,13 @@
 // dependency has stopped being a base, and the way that happens is never a decision: it is one
 // convenient `use`. Two claims, both read off the sources as text:
 //
-//   1. every module's imports are `control-math` or this crate's own;
+//   1. every module's imports are `control-math`, `pga` or this crate's own;
 //   2. the dependency set in Cargo.toml is the one the charter states.
+//
+// `pga` is named and not smuggled: it is the zero-dependency crate of the SHARED VALUE TYPE the
+// contract hands its poses out in, so it is exactly what the charter's own rule about shared value
+// types asks for — one held by more than one party cannot live under any of them. Anything that would
+// need the model, a plant or an engine stays out.
 //
 // The interfaces are anchored separately (`the_interfaces_really_are_stated_here`), so the claims
 // above cannot pass by looking at files that hold nothing.
@@ -45,10 +50,10 @@ fn code_of(text: &str) -> String {
     out.join("\n")
 }
 
-/// The base imports the arithmetic crate and itself, and nothing else: a third name here is the thing
-/// this crate exists not to be.
+/// The base imports the arithmetic crate, the algebra of the value type it hands its poses out in, and
+/// itself, and nothing else: a fourth name here is the thing this crate exists not to be.
 #[test]
-fn every_import_is_control_math_or_our_own() {
+fn every_import_is_control_math_pga_or_our_own() {
     let files = sources();
     assert_eq!(
         files.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
@@ -71,6 +76,7 @@ fn every_import_is_control_math_or_our_own() {
             }
             assert!(
                 t.starts_with("use control_math::")
+                    || t.starts_with("use pga::")
                     || t.starts_with("use crate::")
                     || t.starts_with("use self::")
                     || t.starts_with("use super::"),
@@ -93,8 +99,11 @@ fn the_interfaces_really_are_stated_here() {
     assert!(
         plant.1.contains("pub trait Plant")
             && plant.1.contains("fn structure")
-            && plant.1.contains("fn frame_full_jacobian"),
-        "src/plant.rs no longer states the Plant contract"
+            && plant.1.contains("fn frame_full_jacobian")
+            && plant.1.contains("fn frame_motor")
+            && plant.1.contains("fn task_motor")
+            && plant.1.contains("pub fn motor_of_pose"),
+        "src/plant.rs no longer states the Plant contract and the motor its poses are handed out in"
     );
     let ci = src
         .iter()
@@ -123,10 +132,10 @@ fn the_interfaces_really_are_stated_here() {
     );
 }
 
-/// The dependency set is the charter's own: one path below, and no build script. A base that needs
-/// an engine at build time is not a base.
+/// The dependency set is the charter's own: the arithmetic, the one shared value type, and no build
+/// script. A base that needs an engine at build time is not a base.
 #[test]
-fn the_dependency_set_is_exactly_control_math() {
+fn the_dependency_set_is_exactly_the_charters() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml");
     let mut in_deps = false;
     let mut deps: Vec<String> = Vec::new();
@@ -140,15 +149,16 @@ fn the_dependency_set_is_exactly_control_math() {
             deps.push(t.to_string());
         }
     }
+    // sorted names, so a third entry fails on the set and not on its order
+    let mut names: Vec<&str> = deps
+        .iter()
+        .map(|d| d.split_whitespace().next().unwrap_or(""))
+        .collect();
+    names.sort_unstable();
     assert_eq!(
-        deps.len(),
-        1,
-        "the base has more than one dependency: {deps:?}"
-    );
-    assert!(
-        deps[0].starts_with("control-math"),
-        "the base's one dependency is not control-math: {}",
-        deps[0]
+        names,
+        vec!["control-math", "pga"],
+        "the base's dependency set moved: {deps:?}"
     );
     assert!(
         !manifest.contains("build =") && !root().join("build.rs").exists(),

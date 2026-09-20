@@ -15,6 +15,27 @@
 use control_math::mat::Mat;
 use control_math::quat::Quat;
 use control_math::vec3::Vec3;
+use pga::Multivector;
+
+/// rotor_of_quat: the contract's rotation as a PGA rotor (Cl(3,0,1), the even subalgebra). Why this is
+/// a conversion and not a translation between two shapes: a rotor IS the quaternion's four numbers in
+/// the algebra's own basis, so the same rotation has one representation and this is it — a caller that
+/// reads poses through geometric algebra gets its element here rather than reassembling one.
+///
+/// The rotor is `w - (q_z e12 - q_y e13 + q_x e23)`, the same convention control-model's `PgaFk` and
+/// `pga_layer` are written against, and the one `Plant::frame_motor` below levels.
+pub fn rotor_of_quat(q: Quat) -> Multivector {
+    pga::mv_scalar(q.w).sub(pga::mv_bivector(q.z, -q.y, q.x, 0.0, 0.0, 0.0))
+}
+
+/// motor_of_pose: a pose as one PGA motor, `T(p) R` — the rotation applied first, then the translation.
+/// Why this is worth a type: the (position, rotation) PAIR is affine — composing two poses is a matrix
+/// product and a vector addition — while a motor composes by one product, so a caller holding poses as
+/// motors never takes them apart. The translation is the ideal part, which the degenerate `e0` makes
+/// multiplicative rather than affine.
+pub fn motor_of_pose(p: Vec3, q: Quat) -> Multivector {
+    pga::translator(p.to_array()).gp(rotor_of_quat(q))
+}
 
 /// ContactKind is what the environment supplies at one frame. The two regimes are not one scaled:
 /// a demand outside a friction cone is unsupported rather than saturated, and the contact breaks.
@@ -163,6 +184,15 @@ pub trait Plant {
     fn frame_jacobian(&mut self, name: &str) -> Mat;
     fn frame_full_jacobian(&mut self, name: &str) -> Mat;
 
+    /// The SAME frame pose, as one PGA motor (`motor_of_pose`), for the callers that read geometry
+    /// through the algebra: without it every one of them reassembles the pair itself, and a pose built
+    /// per caller is as many conventions as there are callers. It answers for exactly the names
+    /// `frame_pose` answers for, so a caller cannot ask for a motor of something it cannot ask a pose of.
+    fn frame_motor(&mut self, name: &str) -> Multivector {
+        let (p, q) = self.frame_pose(name);
+        motor_of_pose(p, q)
+    }
+
     /// The non-frame points, addressed by name. Why they are not frames: a point is a quantity of
     /// the whole configuration, so it has no orientation and no link of its own, and a bare frame
     /// name could not carry that difference.
@@ -204,5 +234,15 @@ pub trait Plant {
             TaskMap::Frame(f) => self.frame_full_jacobian(&f),
             TaskMap::Point(_) => Mat::zeros(0, 0),
         }
+    }
+
+    /// The task pose as one PGA motor, the same reading `task_pose` gives. Why the point case is the
+    /// same caveat and not a new one: a point has no orientation, so the rotation carried here is the
+    /// identity convention `task_pose` already stands in with. Read it only when
+    /// `structure().task_is_a_point()` is false; a caller that wants a motor of a frame and knows which
+    /// frame asks `frame_motor` for it by name and never meets the convention at all.
+    fn task_motor(&mut self) -> Multivector {
+        let (p, q) = self.task_pose();
+        motor_of_pose(p, q)
     }
 }

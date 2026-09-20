@@ -8,9 +8,16 @@ rust-version = "1.87"
 license = "MIT"
 
 # The dependency set is exactly this, and the charter is what keeps it: `Mat`, `Vec3` and `Quat` are
-# the only types the Plant contract is written in, and Efference imports nothing at all.
+# the only types the Plant contract's arithmetic is written in, and `pga`'s multivector is the type the
+# contract HANDS ITS POSES OUT IN (`frame_motor`, `task_motor`) — one shared value type, in the crate
+# that holds it and above no holder. `Efference` imports nothing at all.
+#
+# Why `pga` and not more: it is the zero-dependency crate of the shared value type, so naming it costs
+# a boundary statement and no engine, no model and no arithmetic. Anything above it — a conversion that
+# needs the model, a plant, an engine — is not a base's business.
 [dependencies]
 control-math = { path = "../control-math" }
+pga = { path = "../pga" }
 
 [lints.clippy]
 # The one default lint this crate does not follow: `Efference::observe` fills parallel channel arrays
