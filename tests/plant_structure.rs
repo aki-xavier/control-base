@@ -1,16 +1,5 @@
-// plant_structure.rs — the Plant contract's EXPRESSIVE RANGE, as a check rather than a promise.
-//
-// The contract this replaces stated one machine's shape and left it unsaid: no base in the state
-// silently meant the base was welded, `compute_jacobian` answered for a frame nothing named, and a
-// machine whose base floats could not implement the trait at all. `PlantStructure` is what makes the
-// difference STATABLE, and these are the statements that matter — a welded chain is braced by
-// construction, a floating machine's brace has to come from its contacts (where a friction contact is
-// not a weld and does not substitute for one), and a task may be a POINT, which has no rotation to
-// report and no way to say so before `TaskMap` existed.
-
 use control_base::plant::{ContactKind, ExternalContact, Footprint, PlantStructure, TaskMap};
 
-/// bodies is a small named chain, so the tests read like a machine rather than like indices.
 fn bodies() -> Vec<String> {
     ["l1", "l2", "l3"].iter().map(|s| s.to_string()).collect()
 }
@@ -49,8 +38,6 @@ fn a_welded_chain_declares_itself_braced_by_construction() {
 
 #[test]
 fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
-    // 6 base coordinates + 3 joints: the base floats and the joints are the driven ones, the shape
-    // the old contract could not state at all.
     let mut s = PlantStructure {
         dof: 9,
         actuated: vec![false, false, false, false, false, false, true, true, true],
@@ -67,7 +54,6 @@ fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
         "a floating machine with no contact has nothing to write a wrench demand against"
     );
 
-    // A foot does NOT substitute for a weld: it holds one direction, and only in compression.
     s.contacts = vec![ExternalContact {
         frame: "foot_l".to_string(),
         kind: ContactKind::Friction {
@@ -81,7 +67,6 @@ fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
          side the contact breaks rather than saturates"
     );
 
-    // Only a distal WELD braces a floating machine, which is what a hand fixed to a rail would be.
     s.contacts.push(ExternalContact {
         frame: "hand".to_string(),
         kind: ContactKind::Weld,
@@ -89,9 +74,6 @@ fn a_floating_base_is_a_state_whose_brace_must_be_supplied() {
     assert!(s.braced(), "a welded distal contact is a brace");
 }
 
-/// A task that is a POINT has no rotation, and the structure is where that is said. Why the centre of
-/// mass is the case this exists for: it is a mass-weighted quantity of the whole configuration, on no
-/// link, so it cannot be addressed as a frame and cannot be asked for an orientation.
 #[test]
 fn a_task_may_be_a_point_and_then_it_has_no_rotation_to_report() {
     let mut s = PlantStructure {
@@ -110,7 +92,6 @@ fn a_task_may_be_a_point_and_then_it_has_no_rotation_to_report() {
         !s.has_body("com"),
         "a point is not a body: it is a function of the whole configuration, not a link's distal end"
     );
-    // and the frame form is the other answer, not the same one
     s.task_map = tip();
     assert!(!s.task_is_a_point());
 }

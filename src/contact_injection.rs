@@ -1,43 +1,48 @@
-// contact_injection.rs — what a decided force DOES to the machine. The steps are not the point; the
-// order and the signs are. The gate, the clamp-before-dashpot order and the dashpot's sign are what a
-// second copy gets wrong quietly.
-//
-// Why it is split from contact_law.rs: how much and what that does are separable, and separating them
-// is what lets the source of a ground force be swapped without the rest of the contact model
-// changing.
-
 use control_math::mat::Mat;
 use control_math::vec3::Vec3;
 
-/// ContactForce is one component of one slot's contribution. Why the dashpot part is carried
-/// separately: recording only the total is what makes a drift impossible to attribute to the sensor
-/// or to the damper.
+fn clamp_abs(v: f64, cap: f64) -> f64 {
+    if v > cap {
+        cap
+    } else if v < -cap {
+        -cap
+    } else {
+        v
+    }
+}
+
+fn row_dot(j: &Mat, k: usize, vel: &[f64]) -> f64 {
+    let mut s = 0.0;
+    for c in 0..vel.len() {
+        s += j.at(k, c) * vel[c];
+    }
+    s
+}
+
+fn normal_dot(j: &Mat, n: &Vec3, vel: &[f64]) -> f64 {
+    let mut s = 0.0;
+    for c in 0..vel.len() {
+        s += (j.at(0, c) * n.x + j.at(1, c) * n.y + j.at(2, c) * n.z) * vel[c];
+    }
+    s
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ContactForce {
     pub applied: f64,
     pub damp: f64,
 }
 
-/// ContactInjection holds the numbers that turn a wrench readout into generalized force. Why the
-/// filter's memory is not held here: it belongs to whoever owns the slot layout, and is passed in.
 #[derive(Clone, Debug)]
 pub struct ContactInjection {
-    /// 0 injects the raw readout.
     pub tau: f64,
-    /// Why this bound does not apply to a penalty or a solved constraint: those are bounded by the
-    /// machine's own stiffness and equations of motion, not by what a report may say.
     pub f_max: f64,
     pub damp: f64,
     pub floor: f64,
-    /// Why the dashpot can be normal-only: a tangential one answers a rolling contact's rotation
-    /// with a horizontal push, which is friction by another name and is already carried elsewhere.
     pub normal_only: bool,
     pub normal: Vec3,
-    /// Why zero is meaningful: it leaves the contact frictionless.
     pub fric: f64,
     pub mu: f64,
-    /// Why the lever arm is the patch's own half-width: it is the largest lever arm the patch offers.
-    /// Zero disables the torsional term.
     pub c_tor: f64,
     pub r_tor: f64,
 }
@@ -58,8 +63,6 @@ impl ContactInjection {
         }
     }
 
-    /// Why the bound makes this friction and not a damper: it is Coulomb's limit, so the force
-    /// cannot keep growing with speed past `mu * |f_n|`.
     pub fn friction_row(
         &self,
         k: usize,
@@ -68,17 +71,8 @@ impl ContactInjection {
         f_n: f64,
         tau_c: &mut [f64],
     ) -> ContactForce {
-        let mut vt = 0.0;
-        for j in 0..vel.len() {
-            vt += jl.at(k, j) * vel[j];
-        }
-        let mut ft = -self.fric * vt;
-        let cap = self.mu * f_n.abs();
-        if ft > cap {
-            ft = cap;
-        } else if ft < -cap {
-            ft = -cap;
-        }
+        let vt = row_dot(jl, k, vel);
+        let ft = clamp_abs(-self.fric * vt, self.mu * f_n.abs());
         if ft != 0.0 {
             for j in 0..vel.len() {
                 tau_c[j] += jl.at(k, j) * ft;
@@ -90,8 +84,6 @@ impl ContactInjection {
         }
     }
 
-    /// Why the moment goes through the angular rows and not the linear ones: it is a moment about
-    /// the contact normal, bounded by `mu * |f_n| * r_tor`.
     pub fn torsional_row(
         &self,
         ja: &Mat,
@@ -100,20 +92,8 @@ impl ContactInjection {
         f_n: f64,
         tau_c: &mut [f64],
     ) -> f64 {
-        let mut wn = 0.0;
-        for j in 0..vel.len() {
-            let ax = ja.at(0, j);
-            let ay = ja.at(1, j);
-            let az = ja.at(2, j);
-            wn += (ax * n.x + ay * n.y + az * n.z) * vel[j];
-        }
-        let mut mz = -self.c_tor * wn;
-        let cap = self.mu * f_n.abs() * self.r_tor;
-        if mz > cap {
-            mz = cap;
-        } else if mz < -cap {
-            mz = -cap;
-        }
+        let wn = normal_dot(ja, &n, vel);
+        let mz = clamp_abs(-self.c_tor * wn, self.mu * f_n.abs() * self.r_tor);
         if mz != 0.0 {
             for j in 0..vel.len() {
                 tau_c[j] += (ja.at(0, j) * n.x + ja.at(1, j) * n.y + ja.at(2, j) * n.z) * mz;
@@ -135,7 +115,6 @@ impl ContactInjection {
         }
     }
 
-    /// Why the gate exists: without it the dashpot would act on every slot on every tick.
     pub fn live(&self, s: usize, smooth: &[f64]) -> bool {
         let mag2 = smooth[3 * s] * smooth[3 * s]
             + smooth[3 * s + 1] * smooth[3 * s + 1]
@@ -143,21 +122,10 @@ impl ContactInjection {
         mag2 >= self.floor * self.floor
     }
 
-    /// Why the bound is stated once, here: the force a readout commands and the bound that readout
-    /// is trusted within are the same mechanism's numbers.
     pub fn clamp(&self, f: f64) -> f64 {
-        if f > self.f_max {
-            self.f_max
-        } else if f < -self.f_max {
-            -self.f_max
-        } else {
-            f
-        }
+        clamp_abs(f, self.f_max)
     }
 
-    /// Why one row per point rather than one push per slot: which point of a patch carries how much
-    /// IS what a centre of pressure names. The force itself is already decided, and already clamped
-    /// where a clamp applies.
     pub fn row_at(
         &self,
         f: f64,
@@ -166,23 +134,11 @@ impl ContactInjection {
         vel: &[f64],
         tau_c: &mut [f64],
     ) -> ContactForce {
-        let mut vc = 0.0;
-        if self.normal_only {
-            // the contact-point velocity ALONG THE NORMAL: damping belongs to the approach
-            for j in 0..vel.len() {
-                vc += (self.normal.x * jl.at(0, j)
-                    + self.normal.y * jl.at(1, j)
-                    + self.normal.z * jl.at(2, j))
-                    * vel[j];
-            }
+        let vc = if self.normal_only {
+            normal_dot(jl, &self.normal, vel)
         } else {
-            for j in 0..vel.len() {
-                vc += jl.at(k, j) * vel[j];
-            }
-        }
-        // the per-component path keeps the ORIGINAL arithmetic shape (one subtraction with the product
-        // inline) because the C compiler contracts it into an FMA: a separately computed dashpot
-        // differs in the last bit, and that last bit is amplified into a different trajectory.
+            row_dot(jl, k, vel)
+        };
         let applied: f64;
         let d: f64;
         if self.normal_only {
@@ -195,9 +151,6 @@ impl ContactInjection {
             };
             let mut d_n = -self.damp * vc * nk;
             let mut applied_n = f + d_n;
-            // A CONTACT CANNOT PULL: the dashpot may cancel the spring, never invert it, so the force
-            // along the normal is clamped to zero at most (unclamped, the dashpot injects suction and
-            // drags the machine down).
             if applied_n * nk < 0.0 {
                 applied_n = 0.0;
                 d_n = -f;

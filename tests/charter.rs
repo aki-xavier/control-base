@@ -1,18 +1,3 @@
-// charter.rs — the crate's own boundary, as a check rather than a promise. A base crate that grows a
-// dependency has stopped being a base, and the way that happens is never a decision: it is one
-// convenient `use`. Two claims, both read off the sources as text:
-//
-//   1. every module's imports are `control-math`, `pga` or this crate's own;
-//   2. the dependency set in Cargo.toml is the one the charter states.
-//
-// `pga` is named and not smuggled: it is the zero-dependency crate of the SHARED VALUE TYPE the
-// contract hands its poses out in, so it is exactly what the charter's own rule about shared value
-// types asks for — one held by more than one party cannot live under any of them. Anything that would
-// need the model, a plant or an engine stays out.
-//
-// The interfaces are anchored separately (`the_interfaces_really_are_stated_here`), so the claims
-// above cannot pass by looking at files that hold nothing.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,13 +5,9 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-// sources collects every `.rs` under src/ as (relative path, text), walked rather than listed: a walk
-// that missed a subdirectory would leave the charter's escape hatch open, and the claim below is about
-// every file the base holds.
 fn sources() -> Vec<(String, String)> {
     fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, String)>) {
-        let entries =
-            fs::read_dir(dir).unwrap_or_else(|_| panic!("cannot read {}", dir.display()));
+        let entries = fs::read_dir(dir).unwrap_or_else(|_| panic!("cannot read {}", dir.display()));
         let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
         paths.sort();
         for p in paths {
@@ -34,8 +15,8 @@ fn sources() -> Vec<(String, String)> {
             if p.is_dir() {
                 walk(&p, &format!("{prefix}{name}/"), out);
             } else if name.ends_with(".rs") {
-                let text = fs::read_to_string(&p)
-                    .unwrap_or_else(|_| panic!("cannot read {prefix}{name}"));
+                let text =
+                    fs::read_to_string(&p).unwrap_or_else(|_| panic!("cannot read {prefix}{name}"));
                 out.push((format!("{prefix}{name}"), text));
             }
         }
@@ -45,8 +26,6 @@ fn sources() -> Vec<(String, String)> {
     out
 }
 
-// code_of drops whole-line comments: claim 1 is about what the sources do, and the comments are prose
-// about it rather than code.
 fn code_of(text: &str) -> String {
     let mut out: Vec<&str> = Vec::new();
     for line in text.lines() {
@@ -57,15 +36,6 @@ fn code_of(text: &str) -> String {
     out.join("\n")
 }
 
-/// The base imports the arithmetic crate, the algebra of the value type it hands its poses out in, and
-/// itself, and nothing else: a fourth name here is the thing this crate exists not to be.
-///
-/// Why a floor and not an inventory of file names: the boundary is what a file IMPORTS, and a list of
-/// names tests identity instead — it fails on a file added for a good reason, it passes a whole new
-/// responsibility written inside a file already here, and its failure message then accuses a legitimate
-/// addition of being a boundary violation. Which modules the base holds is prose, stated in lib.rs and
-/// Cargo.toml, where a reader looks for it; the anchors below are what keep this claim from passing on
-/// files that hold nothing.
 #[test]
 fn every_import_is_control_math_pga_or_our_own() {
     let files = sources();
@@ -93,9 +63,6 @@ fn every_import_is_control_math_pga_or_our_own() {
     }
 }
 
-/// The interfaces really are stated here, so the claims above are not passing by looking at files
-/// that hold nothing: the contract, the shared contact model, the laws a contact force comes from,
-/// and the calibration.
 #[test]
 fn the_interfaces_really_are_stated_here() {
     let src = sources();
@@ -139,8 +106,6 @@ fn the_interfaces_really_are_stated_here() {
     );
 }
 
-/// The dependency set is the charter's own: the arithmetic, the one shared value type, and no build
-/// script. A base that needs an engine at build time is not a base.
 #[test]
 fn the_dependency_set_is_exactly_the_charters() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml");
@@ -156,7 +121,6 @@ fn the_dependency_set_is_exactly_the_charters() {
             deps.push(t.to_string());
         }
     }
-    // sorted names, so a third entry fails on the set and not on its order
     let mut names: Vec<&str> = deps
         .iter()
         .map(|d| d.split_whitespace().next().unwrap_or(""))
